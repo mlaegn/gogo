@@ -1,0 +1,276 @@
+# Hand-curated. Windows are drafts — argue with a fixture, then edit here.
+# Directions are "from" in meteorological degrees (0 = N, 90 = E, 270 = W).
+# offshore_from: wind direction that is offshore at this spot.
+
+spots:
+  - id: ribeira
+    name: Ribeira d'Ilhas
+    lat: 38.988
+    lon: -9.419
+    region: ericeira
+    swell_from_min: 250
+    swell_from_max: 330
+    size_min_m: 0.8
+    size_max_m: 3.2
+    period_min_s: 8
+    offshore_from: 80
+    max_onshore_kn: 12
+    tides: [mid, high]
+    skill_min: intermediate
+    skill_max: advanced
+    crowd: high
+
+  - id: coxos
+    name: Coxos
+    lat: 39.002
+    lon: -9.426
+    region: ericeira
+    swell_from_min: 270
+    swell_from_max: 340
+    size_min_m: 1.2
+    size_max_m: 3.5
+    period_min_s: 10
+    offshore_from: 80
+    max_onshore_kn: 10
+    tides: [low, mid]
+    skill_min: advanced
+    skill_max: expert
+    crowd: high
+
+  - id: foz_lizandro
+    name: Foz do Lizandro
+    lat: 38.943
+    lon: -9.418
+    region: ericeira
+    swell_from_min: 230
+    swell_from_max: 320
+    size_min_m: 0.5
+    size_max_m: 2.5
+    period_min_s: 6
+    offshore_from: 80
+    max_onshore_kn: 15
+    tides: [low, mid, high]
+    skill_min: beginner
+    skill_max: intermediate
+    crowd: high
+
+  - id: sao_lourenco
+    name: São Lourenço
+    lat: 39.015
+    lon: -9.420
+    region: ericeira
+    swell_from_min: 300
+    swell_from_max: 20
+    size_min_m: 1.0
+    size_max_m: 3.5
+    period_min_s: 9
+    offshore_from: 90
+    max_onshore_kn: 10
+    tides: [mid, high]
+    skill_min: advanced
+    skill_max: expert
+    crowd: medium
+
+  - id: pedra_branca
+    name: Pedra Branca
+    lat: 38.970
+    lon: -9.420
+    region: ericeira
+    swell_from_min: 250
+    swell_from_max: 320
+    size_min_m: 0.8
+    size_max_m: 2.8
+    period_min_s: 8
+    offshore_from: 80
+    max_onshore_kn: 12
+    tides: [mid, high]
+    skill_min: intermediate
+    skill_max: advanced
+    crowd: medium
+
+  - id: empa
+    name: Empa
+    lat: 38.960
+    lon: -9.418
+    region: ericeira
+    swell_from_min: 240
+    swell_from_max: 320
+    size_min_m: 0.6
+    size_max_m: 2.4
+    period_min_s: 7
+    offshore_from: 80
+    max_onshore_kn: 14
+    tides: [low, mid, high]
+    skill_min: beginner
+    skill_max: intermediate
+    crowd: medium
+
+  - id: furnas
+    name: Furnas
+    lat: 39.008
+    lon: -9.424
+    region: ericeira
+    swell_from_min: 270
+    swell_from_max: 340
+    size_min_m: 1.0
+    size_max_m: 3.0
+    period_min_s: 9
+    offshore_from: 80
+    max_onshore_kn: 10
+    tides: [low, mid]
+    skill_min: advanced
+    skill_max: expert
+    crowd: medium
+
+  - id: sao_sebastiao
+    name: São Sebastião
+    lat: 38.975
+    lon: -9.419
+    region: ericeira
+    swell_from_min: 250
+    swell_from_max: 330
+    size_min_m: 0.7
+    size_max_m: 2.6
+    period_min_s: 7
+    offshore_from: 80
+    max_onshore_kn: 12
+    tides: [mid, high]
+    skill_min: intermediate
+    skill_max: advanced
+    crowd: medium
+
+  - id: carcavelos
+    name: Carcavelos
+    lat: 38.676
+    lon: -9.339
+    region: lisbon
+    swell_from_min: 210
+    swell_from_max: 300
+    size_min_m: 0.6
+    size_max_m: 2.8
+    period_min_s: 6
+    offshore_from: 20
+    max_onshore_kn: 16
+    tides: [low, mid, high]
+    skill_min: beginner
+    skill_max: intermediate
+    crowd: high
+
+  - id: sao_pedro
+    name: São Pedro do Estoril
+    lat: 38.693
+    lon: -9.372
+    region: lisbon
+    swell_from_min: 220
+    swell_from_max: 300
+    size_min_m: 0.7
+    size_max_m: 2.5
+    period_min_s: 7
+    offshore_from: 20
+    max_onshore_kn: 14
+    tides: [mid, high]
+    skill_min: intermediate
+    skill_max: advanced
+    crowd: medium
+
+  - id: guincho
+    name: Guincho
+    lat: 38.732
+    lon: -9.472
+    region: lisbon
+    swell_from_min: 240
+    swell_from_max: 330
+    size_min_m: 0.8
+    size_max_m: 4.0
+    period_min_s: 7
+    offshore_from: 80
+    max_onshore_kn: 20
+    tides: [low, mid, high]
+    skill_min: intermediate
+    skill_max: expert
+    crowd: medium
+
+  - id: caparica
+    name: Costa da Caparica
+    lat: 38.627
+    lon: -9.222
+    region: lisbon
+    swell_from_min: 200
+    swell_from_max: 280
+    size_min_m: 0.5
+    size_max_m: 2.5
+    period_min_s: 6
+    offshore_from: 50
+    max_onshore_kn: 16
+    tides: [low, mid, high]
+    skill_min: beginner
+    skill_max: intermediate
+    crowd: high
+
+  - id: supertubos
+    name: Supertubos
+    lat: 39.341
+    lon: -9.361
+    region: peniche
+    swell_from_min: 240
+    swell_from_max: 320
+    size_min_m: 1.2
+    size_max_m: 4.0
+    period_min_s: 10
+    offshore_from: 40
+    max_onshore_kn: 12
+    tides: [mid]
+    skill_min: advanced
+    skill_max: expert
+    crowd: high
+
+  - id: baleal
+    name: Baleal
+    lat: 39.374
+    lon: -9.340
+    region: peniche
+    swell_from_min: 230
+    swell_from_max: 330
+    size_min_m: 0.6
+    size_max_m: 3.0
+    period_min_s: 7
+    offshore_from: 50
+    max_onshore_kn: 16
+    tides: [low, mid, high]
+    skill_min: beginner
+    skill_max: advanced
+    crowd: high
+
+  - id: consolacao
+    name: Consolação
+    lat: 39.325
+    lon: -9.368
+    region: peniche
+    swell_from_min: 220
+    swell_from_max: 300
+    size_min_m: 0.4
+    size_max_m: 2.0
+    period_min_s: 6
+    offshore_from: 40
+    max_onshore_kn: 14
+    tides: [low, mid, high]
+    skill_min: beginner
+    skill_max: intermediate
+    crowd: medium
+
+  - id: lagide
+    name: Lagide
+    lat: 39.368
+    lon: -9.361
+    region: peniche
+    swell_from_min: 250
+    swell_from_max: 330
+    size_min_m: 0.8
+    size_max_m: 3.0
+    period_min_s: 8
+    offshore_from: 50
+    max_onshore_kn: 12
+    tides: [mid, high]
+    skill_min: intermediate
+    skill_max: advanced
+    crowd: medium

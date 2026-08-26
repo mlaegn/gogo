@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gogo
+      POSTGRES_PASSWORD: gogo
+      POSTGRES_DB: gogo
+    ports:
+      - "5432:5432"
+    volumes:
+      - gogo_pg:/var/lib/postgresql/data
+      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+
+volumes:
+  gogo_pg:
