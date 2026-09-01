@@ -1,7 +1,7 @@
 .PHONY: install test weekend weekend-live up down
 
 install:
-	uv venv --python 3.12 .venv
+	uv venv --python 3.12 --clear .venv
 	uv pip install --python .venv/bin/python -e ".[dev]"
 
 test:
