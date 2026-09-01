@@ -10,6 +10,8 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **Open-Meteo only for v1.** Marine + weather forecast. `cell_selection=sea` on marine. `best_match`. Land cell for wind. Batch unique grid points. `forecast_days=7`, `timezone=Europe/Lisbon`.
 - **Tide** from `sea_level_height_msl` is a phase (low/mid/high), not a navigation table. Compare to Hidrográfico before trusting the tide term.
 - **Score decides.** LLM is not in the path. Reasons must explain a rank in one sentence.
+- **Local engine is OrbStack**, not Docker Desktop. Same `docker compose` file.
+- **Worker writes, API reads.** `/windows` must not call Open-Meteo.
 - **No EKS, Redis, Kafka, ClickHouse, Pinecone, Next.js, Auth0.**
 
 ## Layout

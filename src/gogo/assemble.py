@@ -42,6 +42,18 @@ def forecasts_from_grid(hours: list[GridHour]) -> list[HourForecast]:
     return out
 
 
+def saturday_morning(hours: list[GridHour]) -> datetime | None:
+    """First Saturday 08:00 in the series, else the first 08:00, else first hour."""
+    if not hours:
+        return None
+    candidates = [h.valid_at for h in hours]
+    saturdays = [t for t in candidates if t.weekday() == 5 and t.hour == 8]
+    if saturdays:
+        return saturdays[0]
+    eights = [t for t in candidates if t.hour == 8]
+    return eights[0] if eights else candidates[0]
+
+
 def nearest_hour(forecasts: list[HourForecast], when: datetime) -> HourForecast | None:
     if not forecasts:
         return None

@@ -34,6 +34,14 @@ CREATE TABLE forecast_current (
     PRIMARY KEY (grid_lat, grid_lon, valid_at)
 );
 
+-- Which marine grid a spot last resolved to. Current hours are keyed by grid.
+CREATE TABLE spot_grid (
+    spot_id       TEXT PRIMARY KEY REFERENCES spots (id),
+    grid_lat      DOUBLE PRECISION NOT NULL,
+    grid_lon      DOUBLE PRECISION NOT NULL,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE sessions (
     id            BIGSERIAL PRIMARY KEY,
     spot_id       TEXT NOT NULL REFERENCES spots (id),

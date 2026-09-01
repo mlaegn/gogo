@@ -5,10 +5,13 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from gogo.assemble import score_spots_at
+from gogo.assemble import saturday_morning, score_spots_at
 from gogo.ingest.openmeteo import OpenMeteoSource
 from gogo.ingest.protocol import GridHour
+from gogo.models import WindowScore
 from gogo.spots import load_spots
+from gogo.store import connection, load_current_hours
+from gogo.worker import fetch_once
 
 
 def _load_fixture(path: Path) -> list[GridHour]:
@@ -16,20 +19,28 @@ def _load_fixture(path: Path) -> list[GridHour]:
     return [GridHour.model_validate(row) for row in raw]
 
 
-def _saturday_morning(hours: list[GridHour]) -> datetime:
-    """First Saturday 08:00 in the series, else the first 08:00, else first hour."""
-    candidates = [h.valid_at for h in hours]
-    saturdays = [t for t in candidates if t.weekday() == 5 and t.hour == 8]
-    if saturdays:
-        return saturdays[0]
-    eights = [t for t in candidates if t.hour == 8]
-    return eights[0] if eights else candidates[0]
+def print_ranking(when: datetime, ranked: list[WindowScore]) -> None:
+    local = when.replace(tzinfo=None)
+    print(f"Windows around {local.strftime('%A %Y-%m-%d %H:%M')} Europe/Lisbon\n")
+    for w in ranked:
+        mark = {"go": "GO   ", "maybe": "maybe", "no": "no   "}[w.verdict]
+        why = "; ".join(
+            r.detail for r in w.reasons if r.points == 0 or r.code in {"wind", "size", "period"}
+        )
+        print(f"  {mark}  {w.score:3d}  {w.spot_name}")
+        print(f"         {why}")
 
 
-def weekend(fixture: Path | None) -> int:
+def weekend(fixture: Path | None, from_db: bool) -> int:
     spots = load_spots()
     if fixture:
         hours = _load_fixture(fixture)
+    elif from_db:
+        with connection() as conn:
+            hours = load_current_hours(conn, spots)
+        if not hours:
+            print("No stored forecasts. Run: gogo fetch")
+            return 1
     else:
         src = OpenMeteoSource()
         try:
@@ -37,15 +48,17 @@ def weekend(fixture: Path | None) -> int:
         finally:
             src.close()
 
-    when = _saturday_morning(hours)
-    ranked = score_spots_at(spots, hours, when)
-    local = when.replace(tzinfo=None)
-    print(f"Windows around {local.strftime('%A %Y-%m-%d %H:%M')} Europe/Lisbon\n")
-    for w in ranked:
-        mark = {"go": "GO   ", "maybe": "maybe", "no": "no   "}[w.verdict]
-        why = "; ".join(r.detail for r in w.reasons if r.points == 0 or r.code in {"wind", "size", "period"})
-        print(f"  {mark}  {w.score:3d}  {w.spot_name}")
-        print(f"         {why}")
+    when = saturday_morning(hours)
+    if when is None:
+        print("No hours to score.")
+        return 1
+    print_ranking(when, score_spots_at(spots, hours, when))
+    return 0
+
+
+def fetch() -> int:
+    n = fetch_once()
+    print(f"Stored {n} current grid-hours.")
     return 0
 
 
@@ -54,9 +67,17 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     w = sub.add_parser("weekend", help="Rank spots for Saturday morning (or first 08:00).")
     w.add_argument("--fixture", type=Path, default=None)
+    w.add_argument(
+        "--db",
+        action="store_true",
+        help="Score stored forecast_current rows (run gogo fetch first).",
+    )
+    sub.add_parser("fetch", help="Pull Open-Meteo and write snapshots + current to Postgres.")
     args = parser.parse_args(argv)
     if args.cmd == "weekend":
-        return weekend(args.fixture)
+        return weekend(args.fixture, args.db)
+    if args.cmd == "fetch":
+        return fetch()
     return 1
 
 

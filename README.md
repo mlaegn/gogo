@@ -13,17 +13,15 @@ Open the list (later: a phone page + Telegram). You get ranked windows, not a 40
 
 ## Status
 
-**Phase 1 — score + spots.** This is what the repo is for right now.
+**Phase 2 — store + fetch.** Score is unchanged; forecasts now persist.
 
 - 16 hand-curated spots in `spots/coast.yml`
-- A deterministic score (`go` / `maybe` / `no`) with reasons and vetoes
-- Open-Meteo marine + wind client (no API key for non-commercial use)
-- CLI that ranks Saturday morning from a fixture or a live fetch
-- Postgres schema on disk, **not wired yet**
+- Same deterministic score
+- `gogo fetch` writes Open-Meteo hours into Postgres (`forecast_snapshots` + `forecast_current`)
+- `GET /windows` and `gogo weekend --db` read **stored** rows, not a live API call
+- Local Postgres via OrbStack + `make up`
 
-If a hand-loaded weekend does not look right, we do not build a website.
-
-**Not built yet:** hourly worker, `/windows` from stored rows, Telegram, session log, Vite UI, deploy.
+**Not built yet:** hourly loop (cron/worker process), Telegram, session log, Vite UI, deploy.
 
 Thesis project [`surfreporter`](https://github.com/MaximilianLae/surfreporter) is reference only. This is a new product, not a rewrite of that RAG demo.
 
@@ -62,9 +60,12 @@ Needs [uv](https://docs.astral.sh/uv/) (or any Python 3.12 + pip). Docker is opt
 
 ```bash
 make install
+make up               # Postgres in OrbStack (once)
 make test
 make weekend          # committed fixture, no network
-make weekend-live     # hits Open-Meteo
+make fetch            # Open-Meteo → Postgres
+make weekend-db       # score stored rows
+make api              # GET /health and GET /windows
 ```
 
 Equivalent without Make:
