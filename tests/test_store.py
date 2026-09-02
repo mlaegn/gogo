@@ -6,6 +6,7 @@ from gogo.clock import UTC, to_local
 from gogo.ingest.protocol import GridHour
 from gogo.spots import load_spots
 from gogo.store import connect, load_current_hours, persist_hours, seed_spots
+from gogo.versioning import spec_version
 
 
 def _hour(**kwargs) -> GridHour:
@@ -37,16 +38,38 @@ def test_persist_then_load_roundtrip():
     except Exception as exc:
         pytest.skip(f"Postgres not up: {exc}")
 
+    written = _hour()
     with conn:
         seed_spots(conn, spots)
-        n = persist_hours(conn, spots, [_hour()])
+        n = persist_hours(conn, spots, [written])
         assert n == 1
         loaded = load_current_hours(conn, spots)
-    assert len(loaded) >= 1
-    ribeira = [h for h in loaded if h.requested_lat == spots[0].lat]
-    assert ribeira
-    assert ribeira[0].swell_height_m == 1.3
-    assert to_local(ribeira[0].valid_at).hour == 8
+
+    # The table holds every hour ever fetched, so find the one this test wrote
+    # rather than trusting the order rows come back in.
+    mine = [
+        h
+        for h in loaded
+        if h.requested_lat == spots[0].lat and h.valid_at == written.valid_at
+    ]
+    assert len(mine) == 1
+    assert mine[0].swell_height_m == 1.3
+    assert to_local(mine[0].valid_at).hour == 8
+
+
+def test_seed_spots_stores_the_spec_version():
+    spots = [s for s in load_spots() if s.id == "ribeira"]
+    try:
+        conn = connect()
+    except Exception as exc:
+        pytest.skip(f"Postgres not up: {exc}")
+
+    with conn:
+        seed_spots(conn, spots)
+        with conn.cursor() as cur:
+            cur.execute("SELECT spec_version FROM spots WHERE id = 'ribeira'")
+            stored = cur.fetchone()["spec_version"]
+    assert stored == spec_version(spots[0])
 
 
 def test_dst_fold_keeps_two_distinct_hours():

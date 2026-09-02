@@ -3,6 +3,10 @@ from __future__ import annotations
 from gogo.geo import angle_distance, in_bearing_window, window_center
 from gogo.models import HourForecast, Reason, Spot, Verdict, WindowScore
 
+# Bump on any change that can move a rank: weights, thresholds, gates, new terms, or the
+# rule that aggregates hours into a window. A stored verdict is meaningless without it.
+SCORE_VERSION = "v1"
+
 # Onshore is ~180° from the spot's offshore_from.
 _ONSHORE_ALIGN_DEG = 75
 

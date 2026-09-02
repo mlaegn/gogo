@@ -11,7 +11,7 @@ Saturday 07:00–10:00 · Ribeira d'Ilhas · 78
 offshore, incoming mid, 1.3 m @ 11 s NW
 ```
 
-The API already returns a ranked list (today: **one hour**, Saturday 08:00). Grouping hours into ranges like the example above is next. A phone page and Telegram come after that.
+The API already returns a ranked list (today: **one hour**, Saturday 08:00). Grouping hours into ranges like the example above is next, then the phone page — the UI is how this is meant to be used.
 
 ## Status
 
@@ -27,7 +27,7 @@ The API already returns a ranked list (today: **one hour**, Saturday 08:00). Gro
 | `gogo weekend --db` / `GET /windows` | done (read stored rows) |
 | Hourly worker process | **not yet** |
 | Windows as time ranges | **not yet** |
-| UI, Telegram, session log, deploy | later |
+| UI, accounts, session log, deploy | later |
 
 Thesis [`surfreporter`](https://github.com/MaximilianLae/surfreporter) is reference only.
 
@@ -54,8 +54,8 @@ The API does **not** call Open-Meteo. If current is empty, `/windows` returns 50
 | Store | Postgres 16 | Snapshots + current row + later session log |
 | Forecast | Open-Meteo Marine + Forecast | Hourly swell, wind-sea, wind, sea-level |
 | Local engine | OrbStack | Runs the same `docker compose` file |
-| UI (later) | Vite + React + TypeScript | Phone list + detail |
-| Alerts (later) | Telegram | The thing you actually use |
+| UI | Vite + React + TypeScript | Phone list + detail — the primary surface |
+| Alerts (later) | Web push + email | The evening go / no-go |
 | Host (later) | Fly.io or a VPS | Not a personal EKS cluster |
 
 One git repo. `api` and `worker` are processes, not extra repositories.

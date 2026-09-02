@@ -10,6 +10,7 @@ from gogo.clock import to_local
 from gogo.ingest.openmeteo import OpenMeteoSource
 from gogo.ingest.protocol import GridHour
 from gogo.models import WindowScore
+from gogo.score import SCORE_VERSION
 from gogo.spots import load_spots
 from gogo.store import connection, load_current_hours
 from gogo.worker import fetch_once
@@ -22,7 +23,10 @@ def _load_fixture(path: Path) -> list[GridHour]:
 
 def print_ranking(when: datetime, ranked: list[WindowScore]) -> None:
     local = to_local(when)
-    print(f"Windows around {local.strftime('%A %Y-%m-%d %H:%M')} Europe/Lisbon\n")
+    print(
+        f"Windows around {local.strftime('%A %Y-%m-%d %H:%M')} Europe/Lisbon"
+        f"  ·  score {SCORE_VERSION}\n"
+    )
     for w in ranked:
         mark = {"go": "GO   ", "maybe": "maybe", "no": "no   "}[w.verdict]
         why = "; ".join(

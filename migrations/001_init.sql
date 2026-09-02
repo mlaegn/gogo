@@ -1,6 +1,8 @@
 -- System of record. Worker writes snapshots; API reads current.
 -- Unique (spot_id, valid_at) on current so a retry cannot duplicate an hour.
 
+-- spec_version is the digest of `spec` (see versioning.py). Stored rows point at it, so
+-- a recommendation stays replayable after the spot file is edited.
 CREATE TABLE spots (
     id            TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
@@ -8,6 +10,7 @@ CREATE TABLE spots (
     lon           DOUBLE PRECISION NOT NULL,
     region        TEXT NOT NULL,
     spec          JSONB NOT NULL,
+    spec_version  TEXT NOT NULL,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

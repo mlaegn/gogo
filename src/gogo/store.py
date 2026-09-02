@@ -12,6 +12,7 @@ from gogo.clock import UTC, to_utc
 from gogo.ingest.protocol import GridHour
 from gogo.models import Spot
 from gogo.settings import Settings
+from gogo.versioning import spec_version
 
 
 def connect(url: str | None = None) -> psycopg.Connection:
@@ -26,14 +27,15 @@ def connection(url: str | None = None) -> Iterator[psycopg.Connection]:
 
 def seed_spots(conn: psycopg.Connection, spots: list[Spot]) -> None:
     sql = """
-        INSERT INTO spots (id, name, lat, lon, region, spec)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO spots (id, name, lat, lon, region, spec, spec_version)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name,
             lat = EXCLUDED.lat,
             lon = EXCLUDED.lon,
             region = EXCLUDED.region,
-            spec = EXCLUDED.spec
+            spec = EXCLUDED.spec,
+            spec_version = EXCLUDED.spec_version
     """
     with conn.cursor() as cur:
         for spot in spots:
@@ -46,6 +48,7 @@ def seed_spots(conn: psycopg.Connection, spots: list[Spot]) -> None:
                     spot.lon,
                     spot.region,
                     Jsonb(spot.model_dump()),
+                    spec_version(spot),
                 ),
             )
     conn.commit()
