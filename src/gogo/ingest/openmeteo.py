@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 import httpx
 
+from gogo.clock import from_unixtime
 from gogo.ingest.protocol import GridHour
 from gogo.models import Spot
 
 MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+
+# The timezone still decides where `forecast_days` puts its day boundaries; unixtime
+# only changes how the instants come back on the wire, unambiguously.
 TIMEZONE = "Europe/Lisbon"
+TIMEFORMAT = "unixtime"
 
 _MARINE_HOURLY = (
     "swell_wave_height,swell_wave_direction,swell_wave_period,"
@@ -48,6 +52,7 @@ class OpenMeteoSource:
                     "longitude": lons,
                     "hourly": _MARINE_HOURLY,
                     "timezone": TIMEZONE,
+                    "timeformat": TIMEFORMAT,
                     "forecast_days": forecast_days,
                     "cell_selection": "sea",
                 },
@@ -61,6 +66,7 @@ class OpenMeteoSource:
                     "longitude": lons,
                     "hourly": _WEATHER_HOURLY,
                     "timezone": TIMEZONE,
+                    "timeformat": TIMEFORMAT,
                     "forecast_days": forecast_days,
                     "wind_speed_unit": "kn",
                     "cell_selection": "land",
@@ -80,8 +86,8 @@ class OpenMeteoSource:
 
     def _merge(self, spot: Spot, marine: dict[str, Any], weather: dict[str, Any]) -> list[GridHour]:
         mh, wh = marine["hourly"], weather["hourly"]
-        times = [datetime.fromisoformat(t) for t in mh["time"]]
-        wind_at = {datetime.fromisoformat(t): i for i, t in enumerate(wh["time"])}
+        times = [from_unixtime(t) for t in mh["time"]]
+        wind_at = {from_unixtime(t): i for i, t in enumerate(wh["time"])}
 
         out: list[GridHour] = []
         for i, valid_at in enumerate(times):

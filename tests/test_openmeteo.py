@@ -2,8 +2,13 @@ from datetime import datetime
 
 import httpx
 
+from gogo.clock import UTC
 from gogo.ingest.openmeteo import OpenMeteoSource
 from gogo.models import Spot
+
+# Saturday 29 Aug 2026, 08:00 in Lisbon (WEST, UTC+1) is 07:00Z.
+_SATURDAY_0800_LISBON = datetime(2026, 8, 29, 7, 0, tzinfo=UTC)
+_UNIXTIME = int(_SATURDAY_0800_LISBON.timestamp())
 
 _SPOT = Spot(
     id="ribeira",
@@ -30,7 +35,7 @@ def test_fetch_merges_marine_and_weather(monkeypatch):
         "latitude": 38.958,
         "longitude": -9.458,
         "hourly": {
-            "time": ["2026-08-29T08:00"],
+            "time": [_UNIXTIME],
             "swell_wave_height": [1.3],
             "swell_wave_direction": [290],
             "swell_wave_period": [11.0],
@@ -43,7 +48,7 @@ def test_fetch_merges_marine_and_weather(monkeypatch):
         "latitude": 39.0,
         "longitude": -9.375,
         "hourly": {
-            "time": ["2026-08-29T08:00"],
+            "time": [_UNIXTIME],
             "wind_speed_10m": [8.5],
             "wind_direction_10m": [70],
             "wind_gusts_10m": [14.0],
@@ -51,6 +56,7 @@ def test_fetch_merges_marine_and_weather(monkeypatch):
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
+        assert "timeformat=unixtime" in str(request.url)
         if "marine" in str(request.url):
             assert "cell_selection=sea" in str(request.url)
             return httpx.Response(200, json=marine)
@@ -66,4 +72,5 @@ def test_fetch_merges_marine_and_weather(monkeypatch):
     assert h.swell_height_m == 1.3
     assert h.swell_period_s == 11.0
     assert h.wind_speed_kn == 8.5
-    assert h.valid_at == datetime(2026, 8, 29, 8, 0)
+    assert h.valid_at == _SATURDAY_0800_LISBON
+    assert h.valid_at.tzinfo is not None

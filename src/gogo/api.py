@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 
 from gogo import __version__
 from gogo.assemble import saturday_morning, score_spots_at
+from gogo.clock import to_local
 from gogo.spots import load_spots
 from gogo.store import connection, load_current_hours
 
@@ -28,6 +29,7 @@ def windows() -> dict:
     ranked = score_spots_at(spots, hours, when)
     return {
         "when": when.isoformat(),
+        "when_local": to_local(when).isoformat(),
         "windows": [
             {
                 "spot_id": w.spot_id,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime
 
+from gogo.clock import to_local
 from gogo.ingest.protocol import GridHour
 from gogo.models import HourForecast, Spot, WindowScore
 from gogo.score import score_window
@@ -43,14 +44,19 @@ def forecasts_from_grid(hours: list[GridHour]) -> list[HourForecast]:
 
 
 def saturday_morning(hours: list[GridHour]) -> datetime | None:
-    """First Saturday 08:00 in the series, else the first 08:00, else first hour."""
+    """First Saturday 08:00 in the series, else the first 08:00, else first hour.
+
+    The returned instant is UTC; the weekday and hour are read in Europe/Lisbon,
+    because "Saturday 08:00" is what a person means, not what UTC says.
+    """
     if not hours:
         return None
-    candidates = [h.valid_at for h in hours]
-    saturdays = [t for t in candidates if t.weekday() == 5 and t.hour == 8]
+    candidates = sorted({h.valid_at for h in hours})
+    local = [(t, to_local(t)) for t in candidates]
+    saturdays = [t for t, lt in local if lt.weekday() == 5 and lt.hour == 8]
     if saturdays:
         return saturdays[0]
-    eights = [t for t in candidates if t.hour == 8]
+    eights = [t for t, lt in local if lt.hour == 8]
     return eights[0] if eights else candidates[0]
 
 

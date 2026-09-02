@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from gogo.clock import UtcDatetime
 
 TidePhase = Literal["low", "mid", "high"]
 TideTrend = Literal["incoming", "outgoing", "slack"]
@@ -33,7 +34,7 @@ class Spot(BaseModel):
 
 
 class HourForecast(BaseModel):
-    valid_at: datetime
+    valid_at: UtcDatetime
     swell_height_m: float
     swell_from_deg: float
     swell_period_s: float
@@ -55,7 +56,7 @@ class Reason(BaseModel):
 class WindowScore(BaseModel):
     spot_id: str
     spot_name: str
-    valid_at: datetime
+    valid_at: UtcDatetime
     score: int = Field(ge=0, le=100)
     verdict: Verdict
     reasons: list[Reason]

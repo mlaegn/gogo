@@ -29,6 +29,10 @@ The API already returns a ranked list (today: **one hour**, Saturday 08:00). Gro
 
 Thesis [`surfreporter`](https://github.com/MaximilianLae/surfreporter) is reference only.
 
+Where this is going: [`docs/plan.md`](docs/plan.md). Short version — locals' post-session
+feedback becomes training signal for the score, not a social feed, and no score change
+lands without a backtest number.
+
 ## How it works
 
 ```text
@@ -91,7 +95,8 @@ How to change the product: edit the spot file or the score, add a fixture in `te
 
 ## Forecast notes
 
-- Marine: `cell_selection=sea`, `best_match`, `timezone=Europe/Lisbon`, `forecast_days=7`
+- Marine: `cell_selection=sea`, `best_match`, `timezone=Europe/Lisbon`, `timeformat=unixtime`, `forecast_days=7`
+- Timestamps are timezone-aware **UTC** everywhere inside; Lisbon is rendered at the edges. `unixtime` avoids the ambiguous local hour on the autumn DST fold
 - Wind: weather API, knots, land cell
 - Tide is a **phase** from `sea_level_height_msl`, not a Hidrográfico table
 - Nearby spots often share one wave-model cell. Ranking between two Ericeira reefs on the same hour comes from the spot file

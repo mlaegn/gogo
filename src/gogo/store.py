@@ -2,18 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime
 
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from gogo.clock import UTC, to_utc
 from gogo.ingest.protocol import GridHour
 from gogo.models import Spot
 from gogo.settings import Settings
-
-LISBON = ZoneInfo("Europe/Lisbon")
 
 
 def connect(url: str | None = None) -> psycopg.Connection:
@@ -24,12 +22,6 @@ def connect(url: str | None = None) -> psycopg.Connection:
 def connection(url: str | None = None) -> Iterator[psycopg.Connection]:
     with connect(url) as conn:
         yield conn
-
-
-def _aware(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=LISBON)
-    return dt
 
 
 def seed_spots(conn: psycopg.Connection, spots: list[Spot]) -> None:
@@ -66,7 +58,7 @@ def persist_hours(
     fetched_at: datetime | None = None,
 ) -> int:
     """Append snapshots, upsert current by grid, remember each spot's cell."""
-    fetched_at = _aware(fetched_at or datetime.now(timezone.utc))
+    fetched_at = to_utc(fetched_at or datetime.now(UTC))
     if not hours:
         return 0
 
@@ -98,7 +90,7 @@ def persist_hours(
     with conn.cursor() as cur:
         seen_grid_hour: set[tuple[float, float, datetime]] = set()
         for hour in hours:
-            valid_at = _aware(hour.valid_at)
+            valid_at = hour.valid_at
             payload = Jsonb(hour.model_dump(mode="json"))
             key = (hour.grid_lat, hour.grid_lon, valid_at)
             if key not in seen_grid_hour:
@@ -164,6 +156,6 @@ def load_current_hours(conn: psycopg.Connection, spots: list[Spot]) -> list[Grid
             payload["grid_lat"] = row["grid_lat"]
             payload["grid_lon"] = row["grid_lon"]
             payload["source"] = row["source"]
-            payload["valid_at"] = row["valid_at"].astimezone(LISBON)
+            payload["valid_at"] = to_utc(row["valid_at"])
             hours.append(GridHour.model_validate(payload))
     return hours

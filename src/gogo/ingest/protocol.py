@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Protocol
 
 from pydantic import BaseModel
 
+from gogo.clock import UtcDatetime
 from gogo.models import Spot
 
 
@@ -15,7 +15,7 @@ class GridHour(BaseModel):
     requested_lon: float
     grid_lat: float
     grid_lon: float
-    valid_at: datetime
+    valid_at: UtcDatetime
     swell_height_m: float
     swell_from_deg: float
     swell_period_s: float

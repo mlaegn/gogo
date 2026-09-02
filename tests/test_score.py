@@ -1,10 +1,11 @@
 from datetime import datetime
 
+from gogo.clock import UTC
 from gogo.models import HourForecast
 from gogo.score import rank_hour, score_window
 from gogo.spots import by_id, load_spots
 
-WHEN = datetime(2026, 8, 29, 8, 0, 0)
+WHEN = datetime(2026, 8, 29, 7, 0, 0, tzinfo=UTC)  # Saturday 08:00 Lisbon
 
 
 def hour(**kwargs) -> HourForecast:
