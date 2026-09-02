@@ -1,8 +1,7 @@
 .PHONY: install test weekend weekend-live weekend-db fetch api up down
 
 install:
-	uv venv --python 3.12 --clear .venv
-	uv pip install --python .venv/bin/python -e ".[dev]"
+	uv sync --python 3.12
 
 test:
 	.venv/bin/pytest -q

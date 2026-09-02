@@ -14,6 +14,7 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **Worker writes, API reads.** `/windows` must not call Open-Meteo.
 - **No EKS, Redis, Kafka, ClickHouse, Pinecone, Next.js, Auth0.**
 - **CI** runs `pytest` against compose Postgres on GitHub Actions. Do not skip store tests locally if Postgres is up.
+- **Deps** come from `uv.lock`. `make install` is `uv sync`. After changing `pyproject.toml`, run `uv lock` and commit the lockfile.
 
 ## Layout
 

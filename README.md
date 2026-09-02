@@ -82,6 +82,7 @@ src/gogo/worker.py           # fetch_once (loop comes next)
 src/gogo/cli.py              # gogo weekend | fetch
 src/gogo/api.py              # GET /health, GET /windows
 migrations/001_init.sql      # applied on first make up
+uv.lock                      # pinned Python deps; make install / CI use this
 .github/workflows/test.yml   # pytest + compose Postgres
 tests/                       # ranks, ingest mocks, store roundtrip
 ```

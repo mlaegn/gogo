@@ -14,11 +14,11 @@ dependencies = [
     "uvicorn>=0.34",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest>=8.3"]
-
 [project.scripts]
 gogo = "gogo.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
 
 [build-system]
 requires = ["hatchling"]
