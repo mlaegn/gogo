@@ -1,5 +1,7 @@
 # Gogo
 
+![Gogo — go / no-go surf windows](img/header-banner.png)
+
 Go / no-go surf windows for the **Lisbon–Ericeira–Peniche** coast.
 
 Not a generated surf report and not another Surfline. The unit is a **time window**: where to go, when, and why — for you.
