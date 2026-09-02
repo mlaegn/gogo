@@ -10,6 +10,11 @@ services:
     volumes:
       - gogo_pg:/var/lib/postgresql/data
       - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gogo -d gogo"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
 
 volumes:
   gogo_pg:

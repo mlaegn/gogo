@@ -23,7 +23,7 @@ api:
 	.venv/bin/uvicorn gogo.api:app --reload --app-dir src
 
 up:
-	docker compose up -d
+	docker compose up -d --wait
 
 down:
 	docker compose down

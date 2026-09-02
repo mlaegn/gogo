@@ -13,6 +13,7 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **Local engine is OrbStack**, not Docker Desktop. Same `docker compose` file.
 - **Worker writes, API reads.** `/windows` must not call Open-Meteo.
 - **No EKS, Redis, Kafka, ClickHouse, Pinecone, Next.js, Auth0.**
+- **CI** runs `pytest` against compose Postgres on GitHub Actions. Do not skip store tests locally if Postgres is up.
 
 ## Layout
 
@@ -20,7 +21,9 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 spots/coast.yml          # the content — edit here first
 src/gogo/score.py        # pure, tested
 src/gogo/ingest/         # Open-Meteo adapter
-migrations/              # SQL you run on purpose
+src/gogo/store.py        # Postgres
+src/gogo/worker.py       # fetch_once; loop is next
+migrations/              # SQL applied on first postgres start
 tests/fixtures/          # golden weekends
 ```
 
@@ -30,4 +33,4 @@ tests/fixtures/          # golden weekends
 2. Add or adjust a fixture in `tests/test_score.py`.
 3. `make test`. If a rank needs a paragraph of justification, the score is not done.
 
-Do not add a CSS framework, a vector DB, or an LLM while the score is still being argued.
+Do not add a CSS framework, a vector DB, or an LLM while the score is still being argued. Do not add a UI until `/windows` returns time ranges, not a single Saturday 08:00.
