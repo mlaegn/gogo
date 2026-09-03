@@ -27,6 +27,7 @@ The API already returns a ranked list (today: **one hour**, Saturday 08:00). Gro
 | Versioned score + spot specs | done |
 | `window_impressions` — what we told you, append-only | done |
 | `gogo log` — observations, residual, fault codes | done |
+| `gogo import` — bulk CSV of remembered sessions | done |
 | `gogo fetch` | done (one-shot) |
 | `gogo backfill` — ERA5 reanalysis, never served | done |
 | `gogo weekend --db` / `GET /windows` | done (read stored rows) |
@@ -107,6 +108,24 @@ Use `--rating` rather than `--residual` for those: nothing was predicted to you 
 time, so there is no residual to give. Swell and wind go back to at least 2022, tide only
 to late 2022.
 
+A season's worth at once, from a CSV — `date,spot,start,end` required, the rest optional:
+
+```csv
+date,spot,start,end,kind,rating,crowd,faults,note
+2026-03-14,ribeira,07:15,09:00,surfed,4,ok,,clean lines on the point
+2026-03-14,coxos,09:15,09:30,checked,2,busy,size:-1,smaller than it should have been
+```
+
+```bash
+gogo import sessions.csv --dry-run   # check it, write nothing
+gogo import sessions.csv
+```
+
+Rows land unanchored, since no score was visible to you at the time. Re-running an edited
+file corrects it rather than duplicating it. The output counts **same-day spot pairs**,
+not just rows — ranking accuracy compares two spots on one day, so fifty one-spot days
+are fifty labels and no pairs. That is what the `checked` rows are for.
+
 If your database predates `gogo migrate`, baseline it once: `gogo migrate --baseline 001_init.sql`.
 
 Copy `.env.example` to `.env` if you change the database URL. Defaults match compose (`gogo` / `gogo` / `gogo` on `localhost:5432`).
@@ -120,7 +139,8 @@ src/gogo/ingest/openmeteo.py # the only forecast source for v1
 src/gogo/ingest/archive.py   # ERA5 reanalysis — past hours, never served
 src/gogo/store.py            # seed, persist, load current
 src/gogo/worker.py           # fetch_once, backfill (loop comes next)
-src/gogo/cli.py              # gogo weekend | fetch | backfill | migrate | log
+src/gogo/importer.py         # CSV of remembered sessions → labels
+src/gogo/cli.py              # gogo weekend | fetch | backfill | migrate | log | import
 src/gogo/api.py              # GET /health, GET /windows
 src/gogo/clock.py            # UTC inside, Lisbon at the edges
 src/gogo/versioning.py       # spec_version for a spot

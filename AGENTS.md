@@ -19,6 +19,7 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **Worker writes, API reads.** `/windows` must not call Open-Meteo.
 - **No EKS, Redis, Kafka, ClickHouse, Pinecone, Next.js, Auth0.** Identity is an app account (magic link or OAuth); invite-only is the anti-spam design. No Telegram client — the UI is the surface people check.
 - **Ratings pool globally, interpretation can be private.** Observations are anonymous global training signal. Group-scoped spec *overlays* (personal → group → base) are how private local knowledge works. Never fragment the label pool.
+- **A label has one row.** `unique (user_id, spot_id, started_at)`; `record_observation` returns `None` on a duplicate. Recalled sessions import unanchored and carry `rating`, never `residual` — nothing was predicted to them at the time. Same-day pairs are the sample size of the headline metric, so `kind=checked` rows are the point, not padding.
 - **Schema comes from `gogo migrate`**, not from Postgres. There is no initdb mount: `make up` starts the server and migrates it. Add a numbered file in `src/gogo/migrations/`; never edit an applied one.
 - **`coast.yml` and the migrations are package data**, under `src/gogo/`. They ship in the wheel and are found relative to `__file__`. Never resolve runtime input by walking up to the repo root — an installed wheel has no repo root.
 - **CI** runs `gogo migrate` then `pytest` against compose Postgres on GitHub Actions. Do not skip store tests locally if Postgres is up.

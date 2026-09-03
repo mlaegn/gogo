@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from gogo.clock import UTC, to_utc
+from gogo.clock import LISBON, UTC, to_utc
 from gogo.ingest.protocol import GridHour
 from gogo.models import Observation, Spot, WindowScore
 from gogo.score import SCORE_VERSION
@@ -217,6 +217,24 @@ def current_as_of(conn: psycopg.Connection) -> datetime | None:
     return to_utc(row["as_of"]) if row and row["as_of"] else None
 
 
+def analysis_days(conn: psycopg.Connection) -> set[date]:
+    """Local days with reanalysis stored — the days a recalled session can be judged on.
+
+    A label whose day was never backfilled has nothing to be compared against, so the
+    importer warns instead of letting it look imported-and-fine.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT (valid_at AT TIME ZONE %s)::date AS day
+            FROM forecast_snapshots
+            WHERE is_analysis
+            """,
+            (LISBON.key,),
+        )
+        return {row["day"] for row in cur.fetchall()}
+
+
 def ensure_user(conn: psycopg.Connection, handle: str, skill: str = "advanced") -> int:
     """Get or create a user by handle. Real accounts arrive with S5b."""
     with conn.cursor() as cur:
@@ -235,7 +253,13 @@ def ensure_user(conn: psycopg.Connection, handle: str, skill: str = "advanced") 
 
 def record_observation(
     conn: psycopg.Connection, user_id: int, obs: Observation
-) -> int:
+) -> int | None:
+    """Store one label. Returns its id, or None if that session was already recorded.
+
+    None rather than an error because re-running an edited CSV is the normal way to
+    import, and a duplicate is a no-op rather than a problem. See 004 for why the
+    duplicate must not be allowed through.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -243,6 +267,7 @@ def record_observation(
                 (user_id, spot_id, kind, scope, started_at, ended_at, residual,
                  anchored, would_return, rating, crowd, note)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, spot_id, started_at) DO NOTHING
             RETURNING id
             """,
             (
@@ -260,7 +285,11 @@ def record_observation(
                 obs.note,
             ),
         )
-        observation_id = cur.fetchone()["id"]
+        row = cur.fetchone()
+        if row is None:
+            conn.commit()
+            return None
+        observation_id = row["id"]
         for fault in obs.faults:
             cur.execute(
                 """

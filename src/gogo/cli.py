@@ -7,6 +7,7 @@ from pathlib import Path
 
 from gogo.assemble import saturday_morning, score_spots_at
 from gogo.clock import from_local_input, now_utc, to_local
+from gogo.importer import parse_file, summarise
 from gogo.ingest.archive import PROVISIONAL_DAYS, SOURCE, TIDE_FROM
 from gogo.ingest.openmeteo import OpenMeteoSource
 from gogo.ingest.protocol import GridHour
@@ -15,6 +16,7 @@ from gogo.models import Fault, Observation, WindowScore
 from gogo.score import SCORE_VERSION
 from gogo.spots import by_id, load_spots
 from gogo.store import (
+    analysis_days,
     connection,
     current_as_of,
     ensure_user,
@@ -22,6 +24,7 @@ from gogo.store import (
     load_current_hours,
     record_impressions,
     record_observation,
+    seed_spots,
 )
 from gogo.worker import backfill, fetch_once
 
@@ -116,6 +119,9 @@ def log_observation(args: argparse.Namespace) -> int:
 
     start = to_local(obs.started_at).strftime("%a %d %b %H:%M")
     end = to_local(obs.ended_at).strftime("%H:%M")
+    if observation_id is None:
+        print(f"Already logged: {spots[args.spot].name} starting {start}. Nothing written.")
+        return 0
     print(f"Logged #{observation_id}: {spots[args.spot].name} {start}–{end} ({obs.kind})")
     if paired:
         print(
@@ -125,6 +131,47 @@ def log_observation(args: argparse.Namespace) -> int:
     else:
         print("  no recommendation on record for that window — residual is unpaired")
     return 0
+
+
+def import_observations(args: argparse.Namespace) -> int:
+    path = Path(args.file)
+    if not path.is_file():
+        print(f"No such file: {path}")
+        return 1
+
+    parsed = parse_file(path)
+    for column in parsed.unknown_columns:
+        print(f"Ignoring unknown column: {column}")
+    for problem in parsed.errors:
+        print(f"  {problem}")
+    if parsed.errors and not parsed.observations:
+        print("Nothing importable.")
+        return 1
+
+    with connection() as conn:
+        for line in summarise(parsed.observations, covered=analysis_days(conn)):
+            print(f"  {line}")
+
+        if args.dry_run:
+            print("\nDry run — nothing written.")
+            return 1 if parsed.errors else 0
+
+        # Entering a season by hand is a plausible first thing to do on a fresh
+        # database, before any forecast has ever been fetched, and observations
+        # reference spots.
+        seed_spots(conn, load_spots())
+        user_id = ensure_user(conn, args.user)
+        stored = sum(
+            1 for obs in parsed.observations if record_observation(conn, user_id, obs)
+        )
+
+    skipped = len(parsed.observations) - stored
+    print(f"\nImported {stored} observations as {args.user}.")
+    if skipped:
+        print(f"{skipped} were already recorded and were left alone.")
+    # A partly-bad file is a failure worth noticing in a shell, even though the good
+    # rows landed: re-running after a fix is free.
+    return 1 if parsed.errors else 0
 
 
 def run_migrations(baseline_through: str | None) -> int:
@@ -229,6 +276,18 @@ def main(argv: list[str] | None = None) -> int:
     log.add_argument("--note", default=None)
     log.add_argument("--user", default="me", help="Handle; real accounts come with S5b.")
 
+    imp = sub.add_parser(
+        "import",
+        help="Bulk-load remembered sessions from a CSV (date,spot,start,end,...).",
+    )
+    imp.add_argument("file", help="CSV path. Times are local, one row per spot per day.")
+    imp.add_argument("--user", default="me", help="Handle; real accounts come with S5b.")
+    imp.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse and report pairs and gaps without writing anything.",
+    )
+
     args = parser.parse_args(argv)
     if args.cmd == "weekend":
         return weekend(args.fixture, args.db)
@@ -240,6 +299,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_migrations(args.baseline)
     if args.cmd == "log":
         return log_observation(args)
+    if args.cmd == "import":
+        return import_observations(args)
     return 1
 
 

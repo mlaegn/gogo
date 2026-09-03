@@ -1,0 +1,5 @@
+date,spot,start,end,kind,rating,would_return,crowd,faults,note
+2026-03-14,ribeira,07:15,09:00,surfed,4,yes,ok,,clean lines on the point
+2026-03-14,coxos,09:15,09:30,checked,2,no,busy,size:-1,smaller than it should have been
+2026-03-14,foz_lizandro,09:45,10:00,checked,1,no,empty,wind:-1,blown out
+2026-03-15,carcavelos,08:00,10:00,surfed,3,yes,zoo,,

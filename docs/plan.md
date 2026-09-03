@@ -126,8 +126,26 @@ one user — start labelling with it immediately, and let the UI unblock everybo
 
   *Tests:* `test_archive.py`, headed by the negative one — an analysis row must never
   reach `forecast_current`, or `/windows` starts serving hours that already happened.
-- [ ] **S7 · Bulk import.** A dumb CSV importer for past sessions, so camera-roll
-  timestamps become a hundred labels in one sitting.
+- [x] **S7 · Bulk import.** `gogo import sessions.csv` — `date,spot,start,end` required,
+  everything else optional. Local times, per-row errors naming the column and the value,
+  and `--dry-run` because a hand-written file gets checked before it lands.
+
+  Two things are decided here rather than left to whoever writes the file. Imported rows
+  are **unanchored**: our score cannot have been visible for a session last March, and
+  importing them as anchored would poison the control slice. And they carry **`rating`,
+  not `residual`** — a residual is "better or worse than predicted", and nothing was
+  predicted to you at the time.
+
+  The importer reports **same-day spot pairs**, not just a row count, because that is the
+  sample size of S10's headline metric: fifty one-spot days are fifty labels and zero
+  pairs. `kind=checked` rows are where pairs come from. It also names days with no
+  reanalysis stored and prints the `gogo backfill` command that fixes them.
+
+  `004` adds `unique (user_id, spot_id, started_at)`, so re-running an edited file
+  corrects it instead of appending a second copy of every earlier row. Duplicated labels
+  are worse than missing ones — they reweight the metric and nothing looks wrong
+  afterwards. `record_observation` returns `None` on a duplicate rather than raising, and
+  `gogo log` is now safe to fat-finger twice. *Tests:* `test_importer.py`.
 
 **Gate:** ~100 observations across more than one swell event, and ≥1 month of backfilled
 features.
