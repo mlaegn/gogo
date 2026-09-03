@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from gogo.assemble import saturday_morning, score_spots_at
 from gogo.clock import from_local_input, now_utc, to_local
+from gogo.ingest.archive import PROVISIONAL_DAYS, SOURCE, TIDE_FROM
 from gogo.ingest.openmeteo import OpenMeteoSource
 from gogo.ingest.protocol import GridHour
 from gogo.migrate import migrate
@@ -22,7 +23,7 @@ from gogo.store import (
     record_impressions,
     record_observation,
 )
-from gogo.worker import fetch_once
+from gogo.worker import backfill, fetch_once
 
 
 def _load_fixture(path: Path) -> list[GridHour]:
@@ -142,6 +143,27 @@ def fetch() -> int:
     return 0
 
 
+def run_backfill(args: argparse.Namespace) -> int:
+    start = date.fromisoformat(args.from_date)
+    end = date.fromisoformat(args.to_date)
+    if end < start:
+        print(f"--from {start} is after --to {end}")
+        return 1
+
+    settled = to_local(now_utc()).date() - timedelta(days=PROVISIONAL_DAYS)
+    if end > settled:
+        print(f"Note: hours after {settled} are provisional; back them up again later.")
+    if start < TIDE_FROM:
+        print(f"Note: no tide in the archive before {TIDE_FROM}; those hours load without it.")
+
+    def progress(chunk_start: date, chunk_end: date, written: int) -> None:
+        print(f"  {chunk_start} .. {chunk_end}  {written:6d} hours")
+
+    total = backfill(start, end, chunk_days=args.chunk_days, on_chunk=progress)
+    print(f"Wrote {total} analysis grid-hours ({SOURCE}). Serving is untouched.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="gogo")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -153,6 +175,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Score stored forecast_current rows (run gogo fetch first).",
     )
     sub.add_parser("fetch", help="Pull Open-Meteo and write snapshots + current to Postgres.")
+
+    b = sub.add_parser(
+        "backfill",
+        help="Pull ERA5 reanalysis for a past range into snapshots (not into serving).",
+    )
+    b.add_argument("--from", dest="from_date", required=True, metavar="YYYY-MM-DD")
+    b.add_argument("--to", dest="to_date", required=True, metavar="YYYY-MM-DD")
+    b.add_argument(
+        "--chunk-days",
+        type=int,
+        default=31,
+        help="Days per request; each chunk commits before the next starts.",
+    )
 
     m = sub.add_parser("migrate", help="Apply pending SQL migrations.")
     m.add_argument(
@@ -199,6 +234,8 @@ def main(argv: list[str] | None = None) -> int:
         return weekend(args.fixture, args.db)
     if args.cmd == "fetch":
         return fetch()
+    if args.cmd == "backfill":
+        return run_backfill(args)
     if args.cmd == "migrate":
         return run_migrations(args.baseline)
     if args.cmd == "log":

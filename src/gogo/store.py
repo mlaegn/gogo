@@ -133,6 +133,82 @@ def persist_hours(
     return written
 
 
+def persist_analysis_hours(
+    conn: psycopg.Connection,
+    spots: list[Spot],
+    hours: list[GridHour],
+    fetched_at: datetime | None = None,
+) -> int:
+    """Append reanalysis to snapshots. Never writes `forecast_current`.
+
+    That omission is the whole point. `forecast_current` is what `/windows` serves, and
+    upserting ERA5 into it would hand the live path knowledge of hours that have already
+    happened — the score would look clairvoyant and the mistake would be invisible.
+
+    `fetched_at` is when *we* pulled the row, not when it was valid. The row genuinely
+    did not exist before then, so an as-of policy filtering on `fetched_at` is right to
+    hide it from an earlier as-of.
+
+    Returns rows written — inserted, or updated because the archive revised them. A
+    re-run over an unchanged range writes nothing and says so.
+    """
+    fetched_at = to_utc(fetched_at or datetime.now(UTC))
+    if not hours:
+        return 0
+
+    # One analysis row per hour, but not a frozen one: the most recent days come back
+    # complete and are revised afterwards, so a later backfill of the same range has to
+    # be able to correct them. Updating only on a real difference keeps a repeat run
+    # honest about having changed nothing.
+    snap = """
+        INSERT INTO forecast_snapshots
+            (grid_lat, grid_lon, valid_at, fetched_at, source, payload, is_analysis)
+        VALUES (%s, %s, %s, %s, %s, %s, true)
+        ON CONFLICT (grid_lat, grid_lon, valid_at) WHERE is_analysis DO UPDATE SET
+            fetched_at = EXCLUDED.fetched_at,
+            source = EXCLUDED.source,
+            payload = EXCLUDED.payload
+        WHERE forecast_snapshots.payload IS DISTINCT FROM EXCLUDED.payload
+    """
+    # Insert-only: a backfill must not repoint a spot whose serving cell is already
+    # known, but on a database that has never fetched it is the only thing that can
+    # record the mapping features will later need.
+    cell = """
+        INSERT INTO spot_grid (spot_id, grid_lat, grid_lon, updated_at)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (spot_id) DO NOTHING
+    """
+
+    by_request: dict[tuple[float, float], GridHour] = {}
+    written = 0
+    with conn.cursor() as cur:
+        seen: set[tuple[float, float, datetime]] = set()
+        for hour in hours:
+            key = (hour.grid_lat, hour.grid_lon, hour.valid_at)
+            if key not in seen:
+                cur.execute(
+                    snap,
+                    (
+                        hour.grid_lat,
+                        hour.grid_lon,
+                        hour.valid_at,
+                        fetched_at,
+                        hour.source,
+                        Jsonb(hour.model_dump(mode="json")),
+                    ),
+                )
+                written += cur.rowcount
+                seen.add(key)
+            by_request[(hour.requested_lat, hour.requested_lon)] = hour
+
+        for spot in spots:
+            hour = by_request.get((spot.lat, spot.lon))
+            if hour is not None:
+                cur.execute(cell, (spot.id, hour.grid_lat, hour.grid_lon, fetched_at))
+    conn.commit()
+    return written
+
+
 def current_as_of(conn: psycopg.Connection) -> datetime | None:
     """Freshest fetch behind `forecast_current` — the as-of of anything scored from it."""
     with conn.cursor() as cur:

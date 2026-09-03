@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Protocol
 
 from pydantic import BaseModel
@@ -31,4 +32,16 @@ class GridHour(BaseModel):
 class ForecastSource(Protocol):
     def fetch(self, spots: list[Spot], forecast_days: int = 7) -> list[GridHour]:
         """Return hourly snapshots. Implementations must batch unique cells."""
+        ...
+
+
+class AnalysisSource(Protocol):
+    """A reanalysis of hours that already happened — a different thing to a forecast.
+
+    Separate from `ForecastSource` because the signature is the honest difference: a
+    forecast runs forward from now and takes a horizon, an analysis takes a closed past
+    range. Anything satisfying this must never be served as a prediction.
+    """
+
+    def fetch(self, spots: list[Spot], start: date, end: date) -> list[GridHour]:
         ...

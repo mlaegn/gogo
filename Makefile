@@ -1,4 +1,4 @@
-.PHONY: install test weekend weekend-live weekend-db fetch api up down migrate
+.PHONY: install test weekend weekend-live weekend-db fetch backfill api up down migrate
 
 install:
 	uv sync --python 3.12
@@ -17,6 +17,10 @@ weekend-db:
 
 fetch:
 	.venv/bin/gogo fetch
+
+# make backfill FROM=2026-08-01 TO=2026-08-31
+backfill:
+	.venv/bin/gogo backfill --from $(FROM) --to $(TO)
 
 api:
 	.venv/bin/uvicorn gogo.api:app --reload --app-dir src

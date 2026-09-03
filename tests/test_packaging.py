@@ -25,5 +25,7 @@ def test_the_spot_file_lives_inside_the_package():
 
 def test_the_migrations_live_inside_the_package():
     assert MIGRATIONS_DIR.is_relative_to(PACKAGE)
-    names = [p.name for p in migration_files()]
-    assert names == ["001_init.sql", "002_observations.sql"]
+    files = migration_files()
+    assert files, "no migrations found — the runner would report a fresh database as done"
+    assert all(p.is_relative_to(PACKAGE) for p in files)
+    assert files[0].name == "001_init.sql"

@@ -14,6 +14,7 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **Tide** from `sea_level_height_msl` is a phase (low/mid/high), not a navigation table. Compare to Hidrográfico before trusting the tide term. S12 replaces it with height + rate.
 - **Score decides.** LLM is not in the path. Reasons must explain a rank in one sentence.
 - **`forecast_current` is for serving. Evaluation reads `forecast_snapshots` at an as-of.** Backtesting against current leaks hindsight, because current is overwritten by later runs.
+- **Reanalysis is not a forecast.** `gogo backfill` writes `forecast_snapshots` with `is_analysis`, never `forecast_current`. Analysis answers "is the score right about real conditions"; only forecast rows filtered to an as-of can answer "would we have called it right at the time". The archive resolves to the same marine cells as the forecast, so the two join on the grid.
 - **Local engine is OrbStack**, not Docker Desktop. Same `docker compose` file.
 - **Worker writes, API reads.** `/windows` must not call Open-Meteo.
 - **No EKS, Redis, Kafka, ClickHouse, Pinecone, Next.js, Auth0.** Identity is an app account (magic link or OAuth); invite-only is the anti-spam design. No Telegram client — the UI is the surface people check.
@@ -30,7 +31,7 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 docs/plan.md             # the contract — which slice is next
 src/gogo/data/coast.yml  # the content — edit here first
 src/gogo/score.py        # pure, tested
-src/gogo/ingest/         # Open-Meteo adapter
+src/gogo/ingest/         # Open-Meteo: openmeteo.py forecast, archive.py reanalysis
 src/gogo/store.py        # Postgres
 src/gogo/worker.py       # fetch_once; loop is next
 src/gogo/clock.py        # UTC inside, Lisbon at the edges

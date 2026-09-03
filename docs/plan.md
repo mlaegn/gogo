@@ -111,9 +111,21 @@ one user — start labelling with it immediately, and let the UI unblock everybo
   much better, then optional fault codes. Ask the quality question *before* revealing the
   score, and keep an unanchored control slice. Notifications are web push (PWA on the home
   screen for iOS) with email as the fallback for the evening message.
-- [ ] **S6 · Archive backfill.** `gogo backfill --from --to` against the Open-Meteo
+- [x] **S6 · Archive backfill.** `gogo backfill --from --to` against the Open-Meteo
   archive + marine archive, written with `source='archive-era5'` and `is_analysis = true`.
   Reanalysis is not a forecast; without the flag, Q2 numbers quietly assume hindsight.
+  Chunked, and re-runnable: one analysis row per hour, updated in place when the archive
+  revises it.
+
+  Probed before building, and the answers shaped it: the marine **archive returns the
+  same grid cells as the marine forecast**, so analysis and forecast rows join on
+  `(grid_lat, grid_lon, valid_at)` with no extra mapping. Swell and wind are complete
+  back to at least 2022; tide only from late 2022, and earlier hours load without a tide
+  phase rather than failing. There is no hole at the recent end — a range ending today
+  came back complete — so what the last few days lack is finality, not data.
+
+  *Tests:* `test_archive.py`, headed by the negative one — an analysis row must never
+  reach `forecast_current`, or `/windows` starts serving hours that already happened.
 - [ ] **S7 · Bulk import.** A dumb CSV importer for past sessions, so camera-roll
   timestamps become a hundred labels in one sitting.
 

@@ -11,20 +11,81 @@ from gogo.models import Spot
 MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
-# The timezone still decides where `forecast_days` puts its day boundaries; unixtime
-# only changes how the instants come back on the wire, unambiguously.
+# The timezone still decides where day boundaries fall for `forecast_days` and for the
+# archive's `start_date`/`end_date`; unixtime only changes how the instants come back on
+# the wire, unambiguously.
 TIMEZONE = "Europe/Lisbon"
 TIMEFORMAT = "unixtime"
+SOURCE = "open-meteo"
 
-_MARINE_HOURLY = (
+MARINE_HOURLY = (
     "swell_wave_height,swell_wave_direction,swell_wave_period,"
     "wind_wave_height,sea_level_height_msl,sea_surface_temperature"
 )
-_WEATHER_HOURLY = "wind_speed_10m,wind_direction_10m,wind_gusts_10m"
+WEATHER_HOURLY = "wind_speed_10m,wind_direction_10m,wind_gusts_10m"
 
 
-def _as_list(payload: dict[str, Any] | list[dict[str, Any]]) -> list[dict[str, Any]]:
+def as_list(payload: dict[str, Any] | list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One spot comes back as an object, several as an array."""
     return payload if isinstance(payload, list) else [payload]
+
+
+def require_one_per_spot(
+    marine: list[dict[str, Any]], weather: list[dict[str, Any]], spots: list[Spot]
+) -> None:
+    if len(marine) != len(spots) or len(weather) != len(spots):
+        raise RuntimeError(
+            f"Open-Meteo returned {len(marine)} marine / {len(weather)} weather "
+            f"for {len(spots)} spots"
+        )
+
+
+def merge_grid_hours(
+    spot: Spot,
+    marine: dict[str, Any],
+    weather: dict[str, Any],
+    source: str = SOURCE,
+) -> list[GridHour]:
+    """Marine hours joined to wind by instant, keyed to the marine cell.
+
+    Shared by the live and archive paths on purpose: the two differ only in which
+    endpoint filled these dicts, and a field mapping that drifted between them would
+    make analysis rows silently incomparable to the forecast rows they exist to be
+    compared against.
+    """
+    mh, wh = marine["hourly"], weather["hourly"]
+    times = [from_unixtime(t) for t in mh["time"]]
+    wind_at = {from_unixtime(t): i for i, t in enumerate(wh["time"])}
+
+    out: list[GridHour] = []
+    for i, valid_at in enumerate(times):
+        hs = mh["swell_wave_height"][i]
+        if hs is None:
+            continue
+        wi = wind_at.get(valid_at)
+        if wi is None:
+            continue
+        sst = (mh.get("sea_surface_temperature") or [None] * len(times))[i]
+        out.append(
+            GridHour(
+                requested_lat=spot.lat,
+                requested_lon=spot.lon,
+                grid_lat=marine["latitude"],
+                grid_lon=marine["longitude"],
+                valid_at=valid_at,
+                swell_height_m=hs,
+                swell_from_deg=mh["swell_wave_direction"][i] or 0.0,
+                swell_period_s=mh["swell_wave_period"][i] or 0.0,
+                wind_wave_height_m=mh["wind_wave_height"][i] or 0.0,
+                wind_speed_kn=wh["wind_speed_10m"][wi] or 0.0,
+                wind_from_deg=wh["wind_direction_10m"][wi] or 0.0,
+                wind_gusts_kn=wh["wind_gusts_10m"][wi] or 0.0,
+                sea_level_m=mh["sea_level_height_msl"][i],
+                sea_surface_temp_c=sst,
+                source=source,
+            )
+        )
+    return out
 
 
 class OpenMeteoSource:
@@ -44,13 +105,13 @@ class OpenMeteoSource:
         lats = ",".join(str(s.lat) for s in spots)
         lons = ",".join(str(s.lon) for s in spots)
 
-        marine = _as_list(
+        marine = as_list(
             self._client.get(
                 MARINE_URL,
                 params={
                     "latitude": lats,
                     "longitude": lons,
-                    "hourly": _MARINE_HOURLY,
+                    "hourly": MARINE_HOURLY,
                     "timezone": TIMEZONE,
                     "timeformat": TIMEFORMAT,
                     "forecast_days": forecast_days,
@@ -58,13 +119,13 @@ class OpenMeteoSource:
                 },
             ).raise_for_status().json()
         )
-        weather = _as_list(
+        weather = as_list(
             self._client.get(
                 WEATHER_URL,
                 params={
                     "latitude": lats,
                     "longitude": lons,
-                    "hourly": _WEATHER_HOURLY,
+                    "hourly": WEATHER_HOURLY,
                     "timezone": TIMEZONE,
                     "timeformat": TIMEFORMAT,
                     "forecast_days": forecast_days,
@@ -73,47 +134,9 @@ class OpenMeteoSource:
                 },
             ).raise_for_status().json()
         )
-        if len(marine) != len(spots) or len(weather) != len(spots):
-            raise RuntimeError(
-                f"Open-Meteo returned {len(marine)} marine / {len(weather)} weather "
-                f"for {len(spots)} spots"
-            )
+        require_one_per_spot(marine, weather, spots)
 
         hours: list[GridHour] = []
         for spot, m, w in zip(spots, marine, weather, strict=True):
-            hours.extend(self._merge(spot, m, w))
+            hours.extend(merge_grid_hours(spot, m, w))
         return hours
-
-    def _merge(self, spot: Spot, marine: dict[str, Any], weather: dict[str, Any]) -> list[GridHour]:
-        mh, wh = marine["hourly"], weather["hourly"]
-        times = [from_unixtime(t) for t in mh["time"]]
-        wind_at = {from_unixtime(t): i for i, t in enumerate(wh["time"])}
-
-        out: list[GridHour] = []
-        for i, valid_at in enumerate(times):
-            hs = mh["swell_wave_height"][i]
-            if hs is None:
-                continue
-            wi = wind_at.get(valid_at)
-            if wi is None:
-                continue
-            sst = (mh.get("sea_surface_temperature") or [None] * len(times))[i]
-            out.append(
-                GridHour(
-                    requested_lat=spot.lat,
-                    requested_lon=spot.lon,
-                    grid_lat=marine["latitude"],
-                    grid_lon=marine["longitude"],
-                    valid_at=valid_at,
-                    swell_height_m=hs,
-                    swell_from_deg=mh["swell_wave_direction"][i] or 0.0,
-                    swell_period_s=mh["swell_wave_period"][i] or 0.0,
-                    wind_wave_height_m=mh["wind_wave_height"][i] or 0.0,
-                    wind_speed_kn=wh["wind_speed_10m"][wi] or 0.0,
-                    wind_from_deg=wh["wind_direction_10m"][wi] or 0.0,
-                    wind_gusts_kn=wh["wind_gusts_10m"][wi] or 0.0,
-                    sea_level_m=mh["sea_level_height_msl"][i],
-                    sea_surface_temp_c=sst,
-                )
-            )
-        return out

@@ -28,6 +28,7 @@ The API already returns a ranked list (today: **one hour**, Saturday 08:00). Gro
 | `window_impressions` — what we told you, append-only | done |
 | `gogo log` — observations, residual, fault codes | done |
 | `gogo fetch` | done (one-shot) |
+| `gogo backfill` — ERA5 reanalysis, never served | done |
 | `gogo weekend --db` / `GET /windows` | done (read stored rows) |
 | Hourly worker process | **not yet** |
 | Windows as time ranges | **not yet** |
@@ -43,9 +44,14 @@ lands without a backtest number.
 
 ```text
 gogo fetch          → Open-Meteo → snapshots + current (worker writes)
+gogo backfill       → ERA5 archive → snapshots only, is_analysis
 gogo weekend --db   → read current → score Saturday 08:00 → print
 GET /windows        → same as --db, JSON
 ```
+
+`backfill` exists so past sessions can be labelled without waiting for new ones. It never
+writes `forecast_current`: reanalysis is what happened, and serving it would make the
+score look clairvoyant.
 
 The API does **not** call Open-Meteo. If current is empty, `/windows` returns 503 until you `fetch`.
 
@@ -90,6 +96,17 @@ gogo log coxos --start 08:00 --end 08:30 --kind checked --residual -2
 `--fault` names the gate we got wrong. `--kind checked` is looked-at-and-did-not-surf —
 the only trace a wrongly-vetoed spot ever leaves.
 
+To label a session from *before* the forecast was being stored, pull the reanalysis for
+those days first — then the hours have features to be judged against:
+
+```bash
+gogo backfill --from 2026-08-01 --to 2026-08-31
+```
+
+Use `--rating` rather than `--residual` for those: nothing was predicted to you at the
+time, so there is no residual to give. Swell and wind go back to at least 2022, tide only
+to late 2022.
+
 If your database predates `gogo migrate`, baseline it once: `gogo migrate --baseline 001_init.sql`.
 
 Copy `.env.example` to `.env` if you change the database URL. Defaults match compose (`gogo` / `gogo` / `gogo` on `localhost:5432`).
@@ -100,9 +117,10 @@ Copy `.env.example` to `.env` if you change the database URL. Defaults match com
 src/gogo/data/coast.yml      # curated gates — edit here first
 src/gogo/score.py            # pure, tested
 src/gogo/ingest/openmeteo.py # the only forecast source for v1
+src/gogo/ingest/archive.py   # ERA5 reanalysis — past hours, never served
 src/gogo/store.py            # seed, persist, load current
-src/gogo/worker.py           # fetch_once (loop comes next)
-src/gogo/cli.py              # gogo weekend | fetch | migrate | log
+src/gogo/worker.py           # fetch_once, backfill (loop comes next)
+src/gogo/cli.py              # gogo weekend | fetch | backfill | migrate | log
 src/gogo/api.py              # GET /health, GET /windows
 src/gogo/clock.py            # UTC inside, Lisbon at the edges
 src/gogo/versioning.py       # spec_version for a spot
