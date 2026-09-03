@@ -5,7 +5,7 @@ being tolerable the moment it started producing *labels*: the Stage 2 backtest r
 `observations`, and a fabricated Ribeira session is indistinguishable from a real one.
 
 So the suite gets its own database, created once per session, migrated from the files in
-`migrations/`, and truncated between tests. The redirect works by setting `DATABASE_URL`,
+`gogo/migrations/`, and truncated between tests. The redirect sets `DATABASE_URL`,
 which `Settings` reads on every `connect()`, so no test needs to know about any of this.
 
 If Postgres is not running, the redirect is skipped and the database tests skip

@@ -75,6 +75,11 @@ Everything here gets more expensive the longer we wait, because it changes store
   `observations`, where a fabricated session is indistinguishable from a real one.
   `test_migrate.py` proves the schema builds from an empty database, which the baselined
   local database never did.
+- [x] **S4d · Package data.** `coast.yml` and the migrations moved under `src/gogo/`, so
+  they ship in the wheel and resolve relative to `__file__`. Both had been found by
+  walking up to `parents[2]`, which is the repo root from a checkout and nothing at all
+  from `site-packages` — the first container would have started with no spots and no
+  migrations. *Tests:* `test_packaging.py` pins the paths inside the package.
 
 **Gate:** an observation can be logged in under 15 s, and every recommendation ever shown
 is recorded with its inputs. **Met**, verified end to end: a logged session pairs with the

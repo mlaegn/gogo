@@ -1,4 +1,4 @@
-"""Apply `migrations/*.sql` in filename order, once each.
+"""Apply `gogo/migrations/*.sql` in filename order, once each.
 
 Postgres no longer applies anything on its own: `docker compose up` starts an empty
 server and `gogo migrate` brings it to the current schema. Each file runs inside one
@@ -11,6 +11,9 @@ routine.
 
 Filenames must sort in the order they should run, hence the numeric prefixes.
 
+The `.sql` lives inside the package rather than at the repo root because `gogo migrate`
+is a console script: an installed wheel has no repo root to walk up to.
+
 Thirty lines instead of Alembic, deliberately: there is one database, one writer, and
 the migrations are plain SQL that reads like the schema it produces.
 """
@@ -21,7 +24,7 @@ from pathlib import Path
 
 import psycopg
 
-MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 _LEDGER = """
 CREATE TABLE IF NOT EXISTS schema_migrations (

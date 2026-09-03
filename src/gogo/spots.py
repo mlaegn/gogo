@@ -6,7 +6,8 @@ import yaml
 
 from gogo.models import Spot
 
-DEFAULT_PATH = Path(__file__).resolve().parents[2] / "spots" / "coast.yml"
+# Package data, not a sibling directory: an installed wheel has no repo root above it.
+DEFAULT_PATH = Path(__file__).resolve().parent / "data" / "coast.yml"
 
 
 def load_spots(path: Path | None = None) -> list[Spot]:

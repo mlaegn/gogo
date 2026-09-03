@@ -28,7 +28,7 @@ build-backend = "hatchling.build"
 packages = ["src/gogo"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/gogo", "spots", "migrations", "README.md"]
+include = ["src/gogo", "README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

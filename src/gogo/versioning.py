@@ -6,7 +6,7 @@ identifiers do that: `SCORE_VERSION` in `score.py` for the scoring function, and
 
 The hash must be identical across processes and machines, so it uses `hashlib` and not
 `hash()`. It must also be blind to anything that cannot change a recommendation:
-reformatting `spots/coast.yml`, reordering keys, reordering the tide list, or renaming a
+reformatting `coast.yml`, reordering keys, reordering the tide list, or renaming a
 spot all leave the version untouched. Anything that *can* change a recommendation —
 directions, sizes, periods, wind caps, tides, coordinates — is part of the hash.
 

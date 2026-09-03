@@ -19,7 +19,7 @@ The API already returns a ranked list (today: **one hour**, Saturday 08:00). Gro
 
 | Piece | State |
 |---|---|
-| 16 spots in `spots/coast.yml` | done |
+| 16 spots in `src/gogo/data/coast.yml` | done |
 | Deterministic score + tests | done |
 | Open-Meteo marine + wind | done |
 | Postgres (`spots`, `spot_grid`, `forecast_snapshots`, `forecast_current`) | done |
@@ -97,7 +97,7 @@ Copy `.env.example` to `.env` if you change the database URL. Defaults match com
 ## Layout
 
 ```text
-spots/coast.yml              # curated gates — edit here first
+src/gogo/data/coast.yml      # curated gates — edit here first
 src/gogo/score.py            # pure, tested
 src/gogo/ingest/openmeteo.py # the only forecast source for v1
 src/gogo/store.py            # seed, persist, load current
@@ -107,7 +107,7 @@ src/gogo/api.py              # GET /health, GET /windows
 src/gogo/clock.py            # UTC inside, Lisbon at the edges
 src/gogo/versioning.py       # spec_version for a spot
 src/gogo/migrate.py          # numbered SQL, schema_migrations
-migrations/                  # applied by gogo migrate, never by Postgres
+src/gogo/migrations/         # applied by gogo migrate, never by Postgres
 uv.lock                      # pinned Python deps; make install / CI use this
 .github/workflows/test.yml   # pytest + compose Postgres
 tests/                       # ranks, ingest mocks, store roundtrip

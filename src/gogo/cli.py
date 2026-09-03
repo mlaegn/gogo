@@ -154,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub.add_parser("fetch", help="Pull Open-Meteo and write snapshots + current to Postgres.")
 
-    m = sub.add_parser("migrate", help="Apply pending migrations/*.sql.")
+    m = sub.add_parser("migrate", help="Apply pending SQL migrations.")
     m.add_argument(
         "--baseline",
         metavar="FILENAME",
