@@ -7,9 +7,10 @@ services:
       POSTGRES_DB: gogo
     ports:
       - "5432:5432"
+    # No initdb mount: the schema is applied by `gogo migrate`, so a fresh database and
+    # an existing one take the same path and every change is recorded.
     volumes:
       - gogo_pg:/var/lib/postgresql/data
-      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gogo -d gogo"]
       interval: 2s

@@ -18,7 +18,9 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **Worker writes, API reads.** `/windows` must not call Open-Meteo.
 - **No EKS, Redis, Kafka, ClickHouse, Pinecone, Next.js, Auth0.** Identity is an app account (magic link or OAuth); invite-only is the anti-spam design. No Telegram client — the UI is the surface people check.
 - **Ratings pool globally, interpretation can be private.** Observations are anonymous global training signal. Group-scoped spec *overlays* (personal → group → base) are how private local knowledge works. Never fragment the label pool.
-- **CI** runs `pytest` against compose Postgres on GitHub Actions. Do not skip store tests locally if Postgres is up.
+- **Schema comes from `gogo migrate`**, not from Postgres. There is no initdb mount: `make up` starts the server and migrates it. Add a numbered file in `migrations/`; never edit an applied one.
+- **CI** runs `gogo migrate` then `pytest` against compose Postgres on GitHub Actions. Do not skip store tests locally if Postgres is up.
+- **Tests get their own database.** `tests/conftest.py` creates and migrates `gogo_test`, redirects `DATABASE_URL`, and truncates between tests. Never write a test that writes to `gogo` — a fabricated observation is indistinguishable from a real label once the harness exists.
 - **Deps** come from `uv.lock`. `make install` is `uv sync`. After changing `pyproject.toml`, run `uv lock` and commit the lockfile. `numpy`/`scipy` belong to the `eval` group only — never to the API or worker runtime.
 
 ## Layout
@@ -30,7 +32,10 @@ src/gogo/score.py        # pure, tested
 src/gogo/ingest/         # Open-Meteo adapter
 src/gogo/store.py        # Postgres
 src/gogo/worker.py       # fetch_once; loop is next
-migrations/              # SQL applied on first postgres start
+src/gogo/clock.py        # UTC inside, Lisbon at the edges
+src/gogo/versioning.py   # spec_version; SCORE_VERSION lives in score.py
+src/gogo/migrate.py      # gogo migrate
+migrations/              # numbered SQL, applied by gogo migrate
 tests/fixtures/          # golden weekends
 ```
 

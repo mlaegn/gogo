@@ -51,22 +51,34 @@ Everything here gets more expensive the longer we wait, because it changes store
   window with `score_version` on the envelope. Cosmetics (`name`) and identity (`id`) are
   excluded, tide order is normalised, floats are pinned by the declared types.
   *Tests:* `test_versioning.py`, including a pinned digest as the canary.
-- [ ] **S3 · Observations.** Replace `sessions` with `users` / `observations` /
+- [x] **S3 · Observations.** `sessions` replaced by `users` / `observations` /
   `observation_faults`: interval not instant, user id, residual −2..+2, fault codes drawn
   from the score's own reason codes, `kind` in surfed|checked|cam, `anchored` flag, lag
-  from `reported_at − ended_at`. `gogo log` + `POST /observations`.
-  Carries a **`scope`** column (`global` | `group:<id>` | `user:<id>`) from day one —
-  observations are written `global`, but the column is free now and a migration through
-  live data later. Groups themselves are Stage 4.
-- [ ] **S4 · Impressions.** `window_impressions`, written on every `/windows` and CLI
-  render, stamped with `as_of`, `score_version`, `spec_version`, rank, reasons.
-  Append-only, never recomputed. Audit log, not eval output.
-- [ ] **S4b · Migration runner.** `gogo migrate` + `schema_migrations`, ~30 lines, no
-  Alembic. S1–S4 land as one destructive re-init of `001_init.sql`; the runner lands
-  before real data accumulates.
+  from `reported_at − ended_at`, and a **`scope`** column written `global`.
+  `gogo log <spot> --start 07:15 --end 09:00 --residual -1 --fault tide:-1`.
+  `POST /observations` deferred to S5b — an unauthenticated write endpoint is a spam hole.
+  *Tests:* `test_observations.py`, including one asserting `FaultCode` is exactly the set
+  of reason codes `score.py` emits.
+- [x] **S4 · Impressions.** `window_impressions`, written on `/windows` and
+  `weekend --db`, stamped with `as_of`, `surface`, rank, reasons, `score_version`,
+  `spec_version`. Append-only, never recomputed. Audit log, not eval output.
+  *Tests:* `test_impressions.py`.
+- [x] **S4b · Migration runner.** `gogo migrate` + `schema_migrations`. Postgres no longer
+  self-applies SQL: the initdb mount is gone, so a fresh database and an existing one
+  take the same path. `--baseline 001_init.sql` records files up to that one as applied
+  without running them, then applies the rest — used once, on the pre-existing local
+  database. No destructive re-init was needed after all.
+
+- [x] **S4c · Test isolation.** `tests/conftest.py` builds `gogo_test` from the migration
+  files, redirects `DATABASE_URL`, and truncates between tests. Added the moment the
+  suite began writing labels rather than only forecast rows: the Stage 2 backtest reads
+  `observations`, where a fabricated session is indistinguishable from a real one.
+  `test_migrate.py` proves the schema builds from an empty database, which the baselined
+  local database never did.
 
 **Gate:** an observation can be logged in under 15 s, and every recommendation ever shown
-is recorded with its inputs.
+is recorded with its inputs. **Met**, verified end to end: a logged session pairs with the
+impression that predicted it, stamped with the score and spec versions behind it.
 
 ## Stage 1 — get labels flowing
 
@@ -82,9 +94,9 @@ one user — start labelling with it immediately, and let the UI unblock everybo
   be one too. The interval-aggregation rule (max? mean? worst hour? trend-weighted?) is
   part of the score's definition — pick one, write it down, bump `SCORE_VERSION`, and treat
   changing it as a version bump. This is the product unit, not a calibration change, so it
-  is not blocked by the Stage 2 gate. **Also fix here: `/windows` and `saturday_morning`
-  do not exclude hours in the past**, so a stale row for a Saturday that has already been
-  and gone can win. Filter to `valid_at >= now`.
+  is not blocked by the Stage 2 gate. (The past-hours bug was pulled forward into S4:
+  `saturday_morning` takes `not_before`, because impressions were recording
+  recommendations for a Saturday that had already been and gone.)
 - [ ] **S5b · Accounts and invites.** Magic-link email or GitHub/Google OAuth, plus login
   sessions and an invite table. Invite-only *is* the anti-spam design — it makes Sybil
   resistance a non-problem for years. No Auth0. (Note the word collision: a *login*

@@ -1,10 +1,17 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
 
 from gogo.assemble import saturday_morning
-from gogo.clock import LISBON, UTC, from_unixtime, to_local, to_utc
+from gogo.clock import (
+    LISBON,
+    UTC,
+    from_local_input,
+    from_unixtime,
+    to_local,
+    to_utc,
+)
 from gogo.ingest.protocol import GridHour
 
 # Portugal turns the clocks back at 02:00 WEST on 25 Oct 2026, so local 01:00
@@ -53,6 +60,24 @@ def test_naive_datetime_is_rejected():
         _hour(datetime(2026, 8, 29, 8, 0))
 
 
+def test_typed_local_time_becomes_the_right_instant():
+    """Someone logging a session types Lisbon wall-clock time, not UTC."""
+    # September is WEST (UTC+1): 07:15 local is 06:15Z.
+    assert from_local_input(date(2026, 9, 5), "07:15") == datetime(
+        2026, 9, 5, 6, 15, tzinfo=UTC
+    )
+    # December is WET (UTC+0): the same wall clock is a different offset.
+    assert from_local_input(date(2026, 12, 5), "07:15") == datetime(
+        2026, 12, 5, 7, 15, tzinfo=UTC
+    )
+
+
+def test_typed_local_time_tolerates_a_bare_hour():
+    assert from_local_input(date(2026, 9, 5), "7") == from_local_input(
+        date(2026, 9, 5), "07:00"
+    )
+
+
 def test_unixtime_round_trips_to_utc():
     when = datetime(2026, 8, 29, 7, 0, tzinfo=UTC)
     assert from_unixtime(int(when.timestamp())) == when
@@ -82,3 +107,14 @@ def test_saturday_morning_picks_the_earliest_saturday():
         _hour(datetime(2026, 8, 29, 7, 0, tzinfo=UTC)),
     ]
     assert saturday_morning(hours) == datetime(2026, 8, 29, 7, 0, tzinfo=UTC)
+
+
+def test_saturday_morning_skips_saturdays_that_already_happened():
+    """forecast_current keeps every hour ever fetched, including last weekend's."""
+    gone = datetime(2026, 8, 29, 7, 0, tzinfo=UTC)
+    coming = datetime(2026, 9, 5, 7, 0, tzinfo=UTC)
+    hours = [_hour(gone), _hour(coming)]
+
+    assert saturday_morning(hours, not_before=datetime(2026, 9, 3, 12, 0, tzinfo=UTC)) == coming
+    assert saturday_morning(hours, not_before=None) == gone
+    assert saturday_morning(hours, not_before=datetime(2027, 1, 1, tzinfo=UTC)) is None

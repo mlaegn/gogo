@@ -1,4 +1,4 @@
-.PHONY: install test weekend weekend-live weekend-db fetch api up down
+.PHONY: install test weekend weekend-live weekend-db fetch api up down migrate
 
 install:
 	uv sync --python 3.12
@@ -21,8 +21,12 @@ fetch:
 api:
 	.venv/bin/uvicorn gogo.api:app --reload --app-dir src
 
+migrate:
+	.venv/bin/gogo migrate
+
 up:
 	docker compose up -d --wait
+	.venv/bin/gogo migrate
 
 down:
 	docker compose down

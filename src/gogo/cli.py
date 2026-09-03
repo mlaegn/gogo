@@ -2,17 +2,26 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from gogo.assemble import saturday_morning, score_spots_at
-from gogo.clock import to_local
+from gogo.clock import from_local_input, now_utc, to_local
 from gogo.ingest.openmeteo import OpenMeteoSource
 from gogo.ingest.protocol import GridHour
-from gogo.models import WindowScore
+from gogo.migrate import migrate
+from gogo.models import Fault, Observation, WindowScore
 from gogo.score import SCORE_VERSION
-from gogo.spots import load_spots
-from gogo.store import connection, load_current_hours
+from gogo.spots import by_id, load_spots
+from gogo.store import (
+    connection,
+    current_as_of,
+    ensure_user,
+    impression_for,
+    load_current_hours,
+    record_impressions,
+    record_observation,
+)
 from gogo.worker import fetch_once
 
 
@@ -43,9 +52,19 @@ def weekend(fixture: Path | None, from_db: bool) -> int:
     elif from_db:
         with connection() as conn:
             hours = load_current_hours(conn, spots)
-        if not hours:
-            print("No stored forecasts. Run: gogo fetch")
-            return 1
+            if not hours:
+                print("No stored forecasts. Run: gogo fetch")
+                return 1
+            when = saturday_morning(hours, not_before=now_utc())
+            if when is None:
+                print("No upcoming hours to score. Run: gogo fetch")
+                return 1
+            ranked = score_spots_at(spots, hours, when)
+            as_of = current_as_of(conn)
+            if as_of is not None:
+                record_impressions(conn, ranked, spots, as_of, surface="cli")
+        print_ranking(when, ranked)
+        return 0
     else:
         src = OpenMeteoSource()
         try:
@@ -53,11 +72,67 @@ def weekend(fixture: Path | None, from_db: bool) -> int:
         finally:
             src.close()
 
-    when = saturday_morning(hours)
+    # Fixtures are historical on purpose; a live fetch is not.
+    when = saturday_morning(hours, not_before=None if fixture else now_utc())
     if when is None:
         print("No hours to score.")
         return 1
     print_ranking(when, score_spots_at(spots, hours, when))
+    return 0
+
+
+def _parse_fault(raw: str) -> Fault:
+    """`tide:-1` — the tide gate was worse than predicted."""
+    code, _, direction = raw.partition(":")
+    return Fault.model_validate({"code": code, "direction": int(direction or -1)})
+
+
+def log_observation(args: argparse.Namespace) -> int:
+    spots = by_id()
+    if args.spot not in spots:
+        print(f"Unknown spot: {args.spot}. Known: {', '.join(sorted(spots))}")
+        return 1
+
+    day = date.fromisoformat(args.date) if args.date else to_local(now_utc()).date()
+    obs = Observation(
+        spot_id=args.spot,
+        kind=args.kind,
+        started_at=from_local_input(day, args.start),
+        ended_at=from_local_input(day, args.end),
+        residual=args.residual,
+        anchored=not args.unanchored,
+        would_return=args.would_return,
+        rating=args.rating,
+        crowd=args.crowd,
+        note=args.note,
+        faults=[_parse_fault(f) for f in args.fault or []],
+    )
+
+    with connection() as conn:
+        user_id = ensure_user(conn, args.user)
+        observation_id = record_observation(conn, user_id, obs)
+        paired = impression_for(conn, obs.spot_id, obs.started_at, obs.ended_at)
+
+    start = to_local(obs.started_at).strftime("%a %d %b %H:%M")
+    end = to_local(obs.ended_at).strftime("%H:%M")
+    print(f"Logged #{observation_id}: {spots[args.spot].name} {start}–{end} ({obs.kind})")
+    if paired:
+        print(
+            f"  we said {paired['score']} ({paired['verdict']}) "
+            f"on score {paired['score_version']} / spec {paired['spec_version']}"
+        )
+    else:
+        print("  no recommendation on record for that window — residual is unpaired")
+    return 0
+
+
+def run_migrations(baseline_through: str | None) -> int:
+    with connection() as conn:
+        acted = migrate(conn, baseline_through=baseline_through)
+    if not acted:
+        print("Schema already up to date.")
+    for filename, how in acted:
+        print(f"{how:>9}  {filename}")
     return 0
 
 
@@ -78,11 +153,56 @@ def main(argv: list[str] | None = None) -> int:
         help="Score stored forecast_current rows (run gogo fetch first).",
     )
     sub.add_parser("fetch", help="Pull Open-Meteo and write snapshots + current to Postgres.")
+
+    m = sub.add_parser("migrate", help="Apply pending migrations/*.sql.")
+    m.add_argument(
+        "--baseline",
+        metavar="FILENAME",
+        default=None,
+        help="Record files up to and including this one as applied without running "
+        "them, for a database that predates this runner. e.g. 001_init.sql",
+    )
+
+    log = sub.add_parser("log", help="Record what you saw in the water.")
+    log.add_argument("spot", help="Spot id, e.g. ribeira")
+    log.add_argument("--start", required=True, help="Local time, e.g. 07:15")
+    log.add_argument("--end", required=True, help="Local time, e.g. 09:00")
+    log.add_argument("--date", default=None, help="YYYY-MM-DD; defaults to today")
+    log.add_argument("--kind", default="surfed", choices=["surfed", "checked", "cam"])
+    log.add_argument(
+        "--residual",
+        type=int,
+        default=None,
+        choices=[-2, -1, 0, 1, 2],
+        help="Versus what we predicted: -2 much worse .. +2 much better",
+    )
+    log.add_argument(
+        "--fault",
+        action="append",
+        default=None,
+        metavar="CODE[:±1]",
+        help="Gate we got wrong, e.g. tide:-1 size:-1. Repeatable.",
+    )
+    log.add_argument("--crowd", default=None, choices=["empty", "ok", "busy", "zoo"])
+    log.add_argument("--rating", type=int, default=None, choices=[1, 2, 3, 4, 5])
+    log.add_argument("--would-return", action="store_true", default=None)
+    log.add_argument(
+        "--unanchored",
+        action="store_true",
+        help="You had not seen our score when you judged it (control group).",
+    )
+    log.add_argument("--note", default=None)
+    log.add_argument("--user", default="me", help="Handle; real accounts come with S5b.")
+
     args = parser.parse_args(argv)
     if args.cmd == "weekend":
         return weekend(args.fixture, args.db)
     if args.cmd == "fetch":
         return fetch()
+    if args.cmd == "migrate":
+        return run_migrations(args.baseline)
+    if args.cmd == "log":
+        return log_observation(args)
     return 1
 
 

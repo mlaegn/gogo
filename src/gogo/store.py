@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import psycopg
 from psycopg.rows import dict_row
@@ -10,7 +10,8 @@ from psycopg.types.json import Jsonb
 
 from gogo.clock import UTC, to_utc
 from gogo.ingest.protocol import GridHour
-from gogo.models import Spot
+from gogo.models import Observation, Spot, WindowScore
+from gogo.score import SCORE_VERSION
 from gogo.settings import Settings
 from gogo.versioning import spec_version
 
@@ -130,6 +131,134 @@ def persist_hours(
             cur.execute(cell, (spot.id, hour.grid_lat, hour.grid_lon, fetched_at))
     conn.commit()
     return written
+
+
+def current_as_of(conn: psycopg.Connection) -> datetime | None:
+    """Freshest fetch behind `forecast_current` — the as-of of anything scored from it."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT max(fetched_at) AS as_of FROM forecast_current")
+        row = cur.fetchone()
+    return to_utc(row["as_of"]) if row and row["as_of"] else None
+
+
+def ensure_user(conn: psycopg.Connection, handle: str, skill: str = "advanced") -> int:
+    """Get or create a user by handle. Real accounts arrive with S5b."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO users (handle, skill) VALUES (%s, %s)
+            ON CONFLICT (handle) DO UPDATE SET handle = EXCLUDED.handle
+            RETURNING id
+            """,
+            (handle, skill),
+        )
+        user_id = cur.fetchone()["id"]
+    conn.commit()
+    return user_id
+
+
+def record_observation(
+    conn: psycopg.Connection, user_id: int, obs: Observation
+) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO observations
+                (user_id, spot_id, kind, scope, started_at, ended_at, residual,
+                 anchored, would_return, rating, crowd, note)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                user_id,
+                obs.spot_id,
+                obs.kind,
+                obs.scope,
+                obs.started_at,
+                obs.ended_at,
+                obs.residual,
+                obs.anchored,
+                obs.would_return,
+                obs.rating,
+                obs.crowd,
+                obs.note,
+            ),
+        )
+        observation_id = cur.fetchone()["id"]
+        for fault in obs.faults:
+            cur.execute(
+                """
+                INSERT INTO observation_faults (observation_id, code, direction)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (observation_id, code) DO UPDATE
+                    SET direction = EXCLUDED.direction
+                """,
+                (observation_id, fault.code, fault.direction),
+            )
+    conn.commit()
+    return observation_id
+
+
+def record_impressions(
+    conn: psycopg.Connection,
+    ranked: list[WindowScore],
+    spots: list[Spot],
+    as_of: datetime,
+    surface: str,
+    window_hours: int = 1,
+    user_id: int | None = None,
+) -> int:
+    """Write down what we showed. Append-only; a re-request writes a new row.
+
+    Windows are still single hours, so window_end is window_start + one hour. S5 makes
+    them real ranges and this signature stops lying.
+    """
+    versions = {spot.id: spec_version(spot) for spot in spots}
+    sql = """
+        INSERT INTO window_impressions
+            (user_id, spot_id, window_start, window_end, as_of, surface,
+             rank, score, verdict, reasons, score_version, spec_version)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    with conn.cursor() as cur:
+        for position, window in enumerate(ranked, start=1):
+            cur.execute(
+                sql,
+                (
+                    user_id,
+                    window.spot_id,
+                    window.valid_at,
+                    window.valid_at + timedelta(hours=window_hours),
+                    to_utc(as_of),
+                    surface,
+                    position,
+                    window.score,
+                    window.verdict,
+                    Jsonb([r.model_dump() for r in window.reasons]),
+                    SCORE_VERSION,
+                    versions.get(window.spot_id, "unknown"),
+                ),
+            )
+    conn.commit()
+    return len(ranked)
+
+
+def impression_for(
+    conn: psycopg.Connection, spot_id: str, started_at: datetime, ended_at: datetime
+) -> dict | None:
+    """The most recent thing we told anyone about this spot over this interval."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT score, verdict, score_version, spec_version, shown_at
+            FROM window_impressions
+            WHERE spot_id = %s AND window_start < %s AND window_end > %s
+            ORDER BY shown_at DESC
+            LIMIT 1
+            """,
+            (spot_id, to_utc(ended_at), to_utc(started_at)),
+        )
+        return cur.fetchone()
 
 
 def load_current_hours(conn: psycopg.Connection, spots: list[Spot]) -> list[GridHour]:

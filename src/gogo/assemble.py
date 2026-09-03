@@ -43,15 +43,26 @@ def forecasts_from_grid(hours: list[GridHour]) -> list[HourForecast]:
     return out
 
 
-def saturday_morning(hours: list[GridHour]) -> datetime | None:
+def saturday_morning(
+    hours: list[GridHour], not_before: datetime | None = None
+) -> datetime | None:
     """First Saturday 08:00 in the series, else the first 08:00, else first hour.
 
     The returned instant is UTC; the weekday and hour are read in Europe/Lisbon,
     because "Saturday 08:00" is what a person means, not what UTC says.
+
+    `not_before` drops hours that have already happened. Serving paths pass `now`;
+    `forecast_current` keeps every hour ever fetched, so without it a Saturday that has
+    been and gone can outrank the one being asked about. Fixtures pass nothing, because
+    a golden replay is deliberately historical.
     """
     if not hours:
         return None
     candidates = sorted({h.valid_at for h in hours})
+    if not_before is not None:
+        candidates = [t for t in candidates if t >= not_before]
+    if not candidates:
+        return None
     local = [(t, to_local(t)) for t in candidates]
     saturdays = [t for t, lt in local if lt.weekday() == 5 and lt.hour == 8]
     if saturdays:

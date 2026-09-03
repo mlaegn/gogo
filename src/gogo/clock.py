@@ -12,7 +12,7 @@ other.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
@@ -32,6 +32,10 @@ def to_utc(dt: datetime) -> datetime:
     return dt.astimezone(UTC)
 
 
+def now_utc() -> datetime:
+    return datetime.now(UTC)
+
+
 def to_local(dt: datetime) -> datetime:
     """Render an instant in Europe/Lisbon. Only for output and human-facing questions."""
     return to_utc(dt).astimezone(LISBON)
@@ -40,6 +44,17 @@ def to_local(dt: datetime) -> datetime:
 def from_unixtime(seconds: int | float) -> datetime:
     """Open-Meteo `timeformat=unixtime` value → aware UTC."""
     return datetime.fromtimestamp(seconds, tz=UTC)
+
+
+def from_local_input(day: date, clock_time: str) -> datetime:
+    """A person typing "07:15" means Lisbon local. Returns the UTC instant.
+
+    On the autumn fold the same local time occurs twice; this resolves to the first
+    (still in summer time), which is what someone logging a dawn session means.
+    """
+    hour, _, minute = clock_time.partition(":")
+    naive = datetime(day.year, day.month, day.day, int(hour), int(minute or 0))
+    return to_utc(naive.replace(tzinfo=LISBON, fold=0))
 
 
 UtcDatetime = Annotated[AwareDatetime, AfterValidator(to_utc)]

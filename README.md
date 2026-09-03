@@ -22,7 +22,11 @@ The API already returns a ranked list (today: **one hour**, Saturday 08:00). Gro
 | 16 spots in `spots/coast.yml` | done |
 | Deterministic score + tests | done |
 | Open-Meteo marine + wind | done |
-| Postgres (`spots`, `spot_grid`, `forecast_snapshots`, `forecast_current`, `sessions`) | done |
+| Postgres (`spots`, `spot_grid`, `forecast_snapshots`, `forecast_current`) | done |
+| `gogo migrate` — numbered SQL, `schema_migrations` | done |
+| Versioned score + spot specs | done |
+| `window_impressions` — what we told you, append-only | done |
+| `gogo log` — observations, residual, fault codes | done |
 | `gogo fetch` | done (one-shot) |
 | `gogo weekend --db` / `GET /windows` | done (read stored rows) |
 | Hourly worker process | **not yet** |
@@ -66,7 +70,7 @@ Needs [uv](https://docs.astral.sh/uv/) and [OrbStack](https://orbstack.dev) (for
 
 ```bash
 make install
-make up                 # Postgres; waits until it is healthy
+make up                 # Postgres; waits until healthy, then gogo migrate
 make test
 make weekend            # fixture, no network
 make fetch              # Open-Meteo → Postgres
@@ -74,6 +78,19 @@ make weekend-db         # score stored rows
 make api                # http://127.0.0.1:8000/windows
 make down               # stop Postgres; volume (data) stays
 ```
+
+Recording what you saw, which is what the score gets calibrated against:
+
+```bash
+gogo log ribeira --start 07:15 --end 09:00 --residual -1 --fault tide:-1 --crowd busy
+gogo log coxos --start 08:00 --end 08:30 --kind checked --residual -2
+```
+
+`--residual` is how it compared to what we predicted, −2 much worse to +2 much better.
+`--fault` names the gate we got wrong. `--kind checked` is looked-at-and-did-not-surf —
+the only trace a wrongly-vetoed spot ever leaves.
+
+If your database predates `gogo migrate`, baseline it once: `gogo migrate --baseline 001_init.sql`.
 
 Copy `.env.example` to `.env` if you change the database URL. Defaults match compose (`gogo` / `gogo` / `gogo` on `localhost:5432`).
 
@@ -85,9 +102,12 @@ src/gogo/score.py            # pure, tested
 src/gogo/ingest/openmeteo.py # the only forecast source for v1
 src/gogo/store.py            # seed, persist, load current
 src/gogo/worker.py           # fetch_once (loop comes next)
-src/gogo/cli.py              # gogo weekend | fetch
+src/gogo/cli.py              # gogo weekend | fetch | migrate | log
 src/gogo/api.py              # GET /health, GET /windows
-migrations/001_init.sql      # applied on first make up
+src/gogo/clock.py            # UTC inside, Lisbon at the edges
+src/gogo/versioning.py       # spec_version for a spot
+src/gogo/migrate.py          # numbered SQL, schema_migrations
+migrations/                  # applied by gogo migrate, never by Postgres
 uv.lock                      # pinned Python deps; make install / CI use this
 .github/workflows/test.yml   # pytest + compose Postgres
 tests/                       # ranks, ingest mocks, store roundtrip
