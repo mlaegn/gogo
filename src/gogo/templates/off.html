@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Off · Gogo{% endblock %}
+
+{% block content %}
+<h1 class="spot-title">The page is off</h1>
+<p class="sub">No <code>{{ env }}</code> is set, so there is no key to check against.
+  An unset secret means off rather than open — the alternative is a public page nobody
+  meant to publish.</p>
+<p class="sub">Set it and restart: <code>{{ env }}=something-long uv run uvicorn gogo.api:app</code></p>
+{% endblock %}

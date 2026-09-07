@@ -74,14 +74,37 @@ def plan_day(hours: list[GridHour], not_before: datetime | None = None) -> date 
     return saturdays[0] if saturdays else local[0].date()
 
 
-def _surfable_on(series: list[HourForecast], day: date) -> list[HourForecast]:
+def _is_surfable(valid_at: datetime, day: date, not_before: datetime | None) -> bool:
+    if not_before is not None and valid_at < not_before:
+        return False
+    local = to_local(valid_at)
+    return local.date() == day and SURFABLE_FROM_HOUR <= local.hour < SURFABLE_UNTIL_HOUR
+
+
+def _surfable_on(
+    series: list[HourForecast], day: date, not_before: datetime | None = None
+) -> list[HourForecast]:
     """The day's hours a person could actually be in the water, in order."""
-    chosen = []
-    for hour in series:
-        local = to_local(hour.valid_at)
-        if local.date() == day and SURFABLE_FROM_HOUR <= local.hour < SURFABLE_UNTIL_HOUR:
-            chosen.append(hour)
-    return sorted(chosen, key=lambda h: h.valid_at)
+    return sorted(
+        (h for h in series if _is_surfable(h.valid_at, day, not_before)),
+        key=lambda h: h.valid_at,
+    )
+
+
+def available_days(
+    hours: list[GridHour], not_before: datetime | None = None
+) -> list[date]:
+    """Local days that still have surfable hours left in them, earliest first.
+
+    The first entry is the right default for a page: today while there is still a
+    morning or an afternoon left in it, tomorrow once there is not.
+    """
+    days = {
+        to_local(h.valid_at).date()
+        for h in hours
+        if _is_surfable(h.valid_at, to_local(h.valid_at).date(), not_before)
+    }
+    return sorted(days)
 
 
 def runs_of_passing_hours(scored: list[HourScore]) -> list[list[HourScore]]:
@@ -149,8 +172,21 @@ def _closed_window(scored: list[HourScore]) -> WindowScore:
     )
 
 
+def scored_hours(
+    spot: Spot, hours: list[GridHour], day: date, not_before: datetime | None = None
+) -> list[HourScore]:
+    """One spot's day, hour by hour. What the detail view shows behind a tap."""
+    series = forecasts_from_grid(
+        [h for h in hours if (h.requested_lat, h.requested_lon) == (spot.lat, spot.lon)]
+    )
+    return [score_hour(spot, h) for h in _surfable_on(series, day, not_before)]
+
+
 def windows_for_day(
-    spots: list[Spot], hours: list[GridHour], day: date
+    spots: list[Spot],
+    hours: list[GridHour],
+    day: date,
+    not_before: datetime | None = None,
 ) -> list[WindowScore]:
     """Best window per spot for one local day, ranked.
 
@@ -160,6 +196,9 @@ def windows_for_day(
 
     Ranked by score, then by duration: between two equal means, the longer window is the
     better drive. Each spot reads the grid series fetched for its own lat/lon.
+
+    `not_before` drops hours that have already passed, so a window offered at 15:00 does
+    not begin at 06:00. Serving paths pass `now`; a backtest passes its as-of.
     """
     by_request: dict[tuple[float, float], list[GridHour]] = defaultdict(list)
     for h in hours:
@@ -168,7 +207,7 @@ def windows_for_day(
     ranked: list[WindowScore] = []
     for spot in spots:
         series = forecasts_from_grid(by_request.get((spot.lat, spot.lon), []))
-        surfable = _surfable_on(series, day)
+        surfable = _surfable_on(series, day, not_before)
         if not surfable:
             continue
         scored = [score_hour(spot, hour) for hour in surfable]

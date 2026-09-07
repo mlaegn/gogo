@@ -49,6 +49,8 @@ tests/fixtures/          # golden weekends
 2. Add or adjust a fixture in `tests/test_score.py`.
 3. `make test`. If a rank needs a paragraph of justification, the score is not done.
 
-Do not add a CSS framework, a vector DB, or an LLM while the score is still being argued. `/windows` now returns time ranges, so the UI gate is open — but a UI collects labels from other people, and the first hundred are still yours to log.
+Do not add a CSS framework, a vector DB, or an LLM while the score is still being argued. The page exists and is server-rendered Jinja with hand-written CSS — keep it that way; it is a form, not an app.
+
+**The log card must never show our score before the answer is saved.** Anchoring is the one bug in this system that produces data which looks fine and is worthless. `test_web.py` asserts it against rendered HTML; do not relax that test.
 
 **No score improvements before the evaluation harness exists** (`docs/plan.md`, Stage 2 gate). A weight change without a backtest number is an opinion.

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Log a session · Gogo{% endblock %}
+
+{% block content %}
+<h1 class="spot-title">How was it?</h1>
+<p class="sub">Answer before you look at what we predicted — that is the whole point.
+  We show you our number after you save.</p>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<form method="post" action="/log">
+  <label>Spot
+    <select name="spot" required>
+      <option value="">choose…</option>
+      {% for s in spots %}
+        <option value="{{ s.id }}" {% if prefill.spot == s.id %}selected{% endif %}>{{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <div class="row">
+    <label>Day <input type="date" name="day" value="{{ prefill.day }}" required></label>
+    <label>From <input type="time" name="start" value="{{ prefill.start }}" required></label>
+    <label>To <input type="time" name="end" value="{{ prefill.end }}" required></label>
+  </div>
+
+  <label>What happened
+    <select name="kind">
+      <option value="surfed" {% if prefill.kind == 'surfed' %}selected{% endif %}>I surfed</option>
+      <option value="checked" {% if prefill.kind == 'checked' %}selected{% endif %}>I looked and did not go in</option>
+      <option value="cam" {% if prefill.kind == 'cam' %}selected{% endif %}>I saw it on a cam</option>
+    </select>
+  </label>
+
+  <fieldset class="rating">
+    <legend>How were the waves?</legend>
+    {% for value, word in ratings %}
+      <label class="pick">
+        <input type="radio" name="rating" value="{{ value }}" required
+               {% if prefill.rating == value %}checked{% endif %}>
+        <span>{{ value }}<small>{{ word }}</small></span>
+      </label>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset class="inline">
+    <legend>Go back in the same conditions?</legend>
+    <label class="pick wide"><input type="radio" name="would_return" value="yes"><span>yes</span></label>
+    <label class="pick wide"><input type="radio" name="would_return" value="no"><span>no</span></label>
+  </fieldset>
+
+  <label>Crowd
+    <select name="crowd">
+      {% for value, word in crowds %}<option value="{{ value }}">{{ word }}</option>{% endfor %}
+    </select>
+  </label>
+
+  <fieldset class="faults">
+    <legend>Anything we got wrong? <small>optional</small></legend>
+    {% for code, word in faults %}
+      <label class="check"><input type="checkbox" name="faults" value="{{ code }}"><span>{{ word }}</span></label>
+    {% endfor %}
+  </fieldset>
+
+  <label>Note <small>optional</small>
+    <textarea name="note" rows="2" placeholder="sandbar shifted, only worked on the push…">{{ prefill.note or '' }}</textarea>
+  </label>
+
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

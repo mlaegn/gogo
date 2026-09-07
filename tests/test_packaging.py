@@ -13,6 +13,7 @@ from pathlib import Path
 import gogo
 from gogo.migrate import MIGRATIONS_DIR, migration_files
 from gogo.spots import DEFAULT_PATH, load_spots
+from gogo.web import STATIC_DIR, TEMPLATE_DIR
 
 PACKAGE = Path(gogo.__file__).resolve().parent
 
@@ -29,3 +30,16 @@ def test_the_migrations_live_inside_the_package():
     assert files, "no migrations found — the runner would report a fresh database as done"
     assert all(p.is_relative_to(PACKAGE) for p in files)
     assert files[0].name == "001_init.sql"
+
+
+def test_the_page_travels_with_the_code():
+    """A wheel that ships the routes but not the templates serves a stack trace."""
+    for directory in (TEMPLATE_DIR, STATIC_DIR):
+        assert directory.is_relative_to(PACKAGE)
+        assert directory.is_dir()
+
+    assert (TEMPLATE_DIR / "base.html").is_file()
+    assert (STATIC_DIR / "app.css").is_file()
+    # Every template the routes can render, so a rename cannot 500 in production only.
+    for name in ("index", "spot", "log", "logged", "enter", "empty", "off"):
+        assert (TEMPLATE_DIR / f"{name}.html").is_file(), name

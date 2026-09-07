@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Saved · Gogo{% endblock %}
+
+{% block content %}
+{% if duplicate %}
+  <h1 class="spot-title">Already logged</h1>
+  <p class="sub">{{ spot_name }}, {{ day }} {{ span }} is on record. Nothing was changed —
+    one session is one label.</p>
+{% else %}
+  <h1 class="spot-title">Saved</h1>
+  <p class="sub">{{ spot_name }}, {{ day }} {{ span }} — you said <strong>{{ rating }},
+    {{ rating_word }}</strong>.</p>
+{% endif %}
+
+{% if shown %}
+  <div class="reveal">
+    <p>We had said <strong>{{ shown.score }}</strong> ({{ shown.verdict }}).</p>
+    <p class="sub">Scored by {{ shown.score_version }} on spec {{ shown.spec_version }}.
+      Your rating was recorded before you saw this.</p>
+  </div>
+{% else %}
+  <div class="reveal">
+    <p>We had nothing on screen for that session.</p>
+    <p class="sub">It still counts for whether the score reads conditions right, but it
+      cannot say whether we would have sent you to the right place.</p>
+  </div>
+{% endif %}
+
+<a class="cta" href="/log">Log another</a>
+{% endblock %}

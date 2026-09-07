@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ spot.name }} · Gogo{% endblock %}
+
+{% block content %}
+<h1 class="spot-title">{{ spot.name }}</h1>
+<p class="sub">{{ day_label }} · {{ spot.region }} · wants
+  {{ spot.size_min_m }}–{{ spot.size_max_m }} m from
+  {{ spot.swell_from_min }}–{{ spot.swell_from_max }}°, offshore {{ spot.offshore_from }}°</p>
+
+<table class="hours">
+  <tbody>
+  {% for h in hours %}
+    <tr class="v-{{ h.verdict }}">
+      <td class="at">{{ h.at }}</td>
+      <td class="score">{{ h.score }}</td>
+      <td class="why">{{ h.why }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<a class="cta" href="/log?spot={{ spot.id }}&day={{ day.isoformat() }}">Log a session here</a>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Enter · Gogo{% endblock %}
+
+{% block content %}
+<h1 class="spot-title">Private</h1>
+<p class="sub">One key, one user, until real accounts land.</p>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post" action="/enter">
+  <label>Key <input type="password" name="key" autocomplete="current-password" required autofocus></label>
+  <button type="submit">Enter</button>
+</form>
+{% endblock %}

@@ -1,0 +1,233 @@
+/* Hand-written, no framework: the page is small enough that a framework would be more
+   bytes than the page. Sized for a thumb on a wet phone. */
+
+:root {
+  --bg: #0b1622;
+  --card: #142433;
+  --line: #21384c;
+  --ink: #e8f1f8;
+  --dim: #8ba6bd;
+  --go: #3ddc97;
+  --maybe: #f0b429;
+  --no: #6b7f92;
+  --tap: 48px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 0 5rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  padding: max(env(safe-area-inset-top), 0.9rem) 1rem 0.6rem;
+}
+
+.wordmark {
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+main { padding: 0 1rem; }
+
+h1 { font-size: 1.55rem; margin: 0.2rem 0; }
+.spot-title { margin-top: 0.6rem; }
+.sub { color: var(--dim); margin: 0.3rem 0 1.1rem; }
+small { color: var(--dim); font-weight: 400; }
+
+/* Day picker: horizontal, scrolls past seven days without wrapping. */
+.days {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.2rem 0 0.9rem;
+  scrollbar-width: none;
+}
+.days::-webkit-scrollbar { display: none; }
+.day {
+  flex: 0 0 auto;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--dim);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.day.on { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+
+.headline {
+  display: block;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--no);
+  border-radius: 14px;
+  padding: 1rem 1.1rem 1.15rem;
+  color: inherit;
+  text-decoration: none;
+}
+.headline .verdict {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--no);
+}
+.headline .window { font-size: 2rem; font-weight: 650; letter-spacing: -0.01em; }
+.headline .meta { color: var(--dim); margin-top: 0.15rem; }
+.headline .why { color: var(--dim); margin: 0.7rem 0 0; }
+
+.v-go { border-left-color: var(--go); }
+.v-go .verdict { color: var(--go); }
+.v-maybe { border-left-color: var(--maybe); }
+.v-maybe .verdict { color: var(--maybe); }
+
+.ranked { list-style: none; margin: 1.1rem 0 0; padding: 0; }
+.ranked li { border-bottom: 1px solid var(--line); }
+.ranked a {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: var(--tap);
+  color: inherit;
+  text-decoration: none;
+}
+.ranked .score {
+  flex: 0 0 2.4rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+.ranked .name { flex: 1 1 auto; }
+.ranked .span { color: var(--dim); font-variant-numeric: tabular-nums; }
+.ranked li.v-no .score, .ranked li.v-no .name { color: var(--no); }
+.ranked li.v-go .score { color: var(--go); }
+
+.asof { color: var(--dim); font-size: 0.85rem; margin-top: 1.4rem; }
+
+.cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  margin: 1.1rem 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.hours { width: 100%; border-collapse: collapse; }
+.hours td { border-bottom: 1px solid var(--line); padding: 0.55rem 0.4rem; vertical-align: top; }
+.hours .at { width: 3.6rem; font-variant-numeric: tabular-nums; color: var(--dim); }
+.hours .score { width: 2.6rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.hours .why { color: var(--dim); font-size: 0.9rem; }
+.hours tr.v-go .score { color: var(--go); }
+.hours tr.v-maybe .score { color: var(--maybe); }
+.hours tr.v-no .score { color: var(--no); }
+
+/* Forms: every control at least a thumb tall, 16px+ text so iOS does not zoom. */
+form { display: flex; flex-direction: column; gap: 1rem; }
+label { display: flex; flex-direction: column; gap: 0.35rem; color: var(--dim); }
+.row { display: flex; gap: 0.6rem; }
+.row label { flex: 1 1 0; }
+
+select, input[type="date"], input[type="time"], input[type="password"], textarea {
+  min-height: var(--tap);
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 1rem;
+  font-family: inherit;
+}
+textarea { min-height: 4rem; }
+
+fieldset { border: 0; margin: 0; padding: 0; }
+legend { color: var(--dim); padding: 0 0 0.5rem; }
+
+.rating, .inline { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.rating legend, .inline legend { flex: 1 0 100%; }
+.pick { flex: 1 1 0; }
+.pick input { position: absolute; opacity: 0; pointer-events: none; }
+.pick span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 650;
+}
+.pick span small { font-size: 0.7rem; font-weight: 400; }
+.pick input:checked + span { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.pick input:focus-visible + span { outline: 2px solid var(--go); outline-offset: 2px; }
+.pick.wide { flex: 1 1 40%; }
+
+.faults { display: flex; flex-direction: column; gap: 0.4rem; }
+.check { flex-direction: row; align-items: center; gap: 0.6rem; min-height: var(--tap); color: var(--ink); }
+.check input { width: 22px; height: 22px; accent-color: var(--go); }
+
+button {
+  min-height: var(--tap);
+  border: 0;
+  border-radius: 12px;
+  background: var(--go);
+  color: #05231a;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-family: inherit;
+}
+
+.error {
+  background: #3a1c22;
+  border: 1px solid #6b2f38;
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+}
+
+.reveal {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.9rem 1.1rem;
+}
+.reveal p { margin: 0.3rem 0; }
+
+.tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  background: rgba(11, 22, 34, 0.94);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+  backdrop-filter: blur(8px);
+}
+.tabbar a {
+  flex: 1 1 0;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 0.95rem;
+}

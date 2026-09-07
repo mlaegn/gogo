@@ -127,15 +127,60 @@ one user — start labelling with it immediately, and let the UI unblock everybo
   (The past-hours bug was pulled forward into S4: the day picker takes `not_before`,
   because impressions were recording recommendations for a Saturday that had already been
   and gone.) *Tests:* `test_windows.py`.
+- [x] **S5a · Any day, not only Saturday.** Found while starting the UI: `/windows` took
+  no parameters and `plan_day` always returned the next Saturday, so the system could
+  answer exactly one question while sitting on a full seven days of stored forecast.
+
+  That capped labels as much as it capped usefulness. Only a day we made a recommendation
+  for can produce an *anchored* label, so a weekend-only system throws away every midweek
+  session. `/windows?day=` and `/days` now exist, `available_days` lists the days with
+  surfable hours left, and `windows_for_day` takes `not_before` — a window offered at
+  15:00 must not begin at 06:00. `serving.py` holds the one copy of "pick a day, score it,
+  record what we showed", because two copies would drift and the impression log would stop
+  meaning anything.
 - [ ] **S5b · Accounts and invites.** Magic-link email or GitHub/Google OAuth, plus login
   sessions and an invite table. Invite-only *is* the anti-spam design — it makes Sybil
   resistance a non-problem for years. No Auth0. (Note the word collision: a *login*
   session is not a *surf* session. The surf one is an `observation` now.)
-- [ ] **S5c · Minimal mobile web UI.** One screen: verdict, window, drive, one sentence of
-  why. Detail behind a tap. Plus the post-session card — five buttons from much worse to
-  much better, then optional fault codes. Ask the quality question *before* revealing the
-  score, and keep an unanchored control slice. Notifications are web push (PWA on the home
-  screen for iOS) with email as the fallback for the evening message.
+
+  **Deliberately deferred** so labels start flowing sooner: the page is behind one shared
+  secret writing to a single seeded user. An unset `GOGO_WEB_SECRET` means the page is
+  *off*, not open, and there is no "localhost is exempt" shortcut — behind a proxy the
+  client address is the proxy's, so that exemption publishes the site.
+- [x] **S5c · Minimal mobile web UI.** Server-rendered Jinja, hand-written CSS, no build
+  step, no framework: a form posts and the page reloads. Fewer moving parts than a client
+  app, and it works on a cold phone with one bar of signal. `templates/` and `static/` are
+  package data beside `coast.yml`, so a wheel that ships the routes also ships the page.
+
+  Main screen: a day picker, one headline window, then the ranked rest, detail behind a
+  tap. A closed spot still gets a row — a wrong veto has to leave a trace.
+
+  The post-session card asks **absolute quality, blind**, then reveals our number on the
+  confirmation page. The plan originally said "five buttons much worse to much better",
+  but that is a *relative* question and asking it requires showing the score first, which
+  is the anchoring trap two lines further down. So the card asks 1–5 plus "would you go
+  back" and optional fault codes, and the residual is computed later against the stored
+  impression. `test_web.py::test_the_log_card_never_shows_our_score` asserts against the
+  rendered HTML, because this is the property that makes the labels worth having.
+
+  `anchored` is set from `impression_for`: true only when we really had something on
+  screen for that interval. A detail view records no impression — the log answers "what
+  did we put in front of him", not "what did he browse". `005` adds `'web'` to the
+  surface check, since the surface that produces labels was the one we could not record.
+
+  Notifications are still to come: web push (PWA on the home screen for iOS) with email as
+  the fallback for the evening message. The manifest is there, so the page installs.
+- [ ] **S5d · Make it run without you.** The gap this plan never named: nothing runs by
+  itself. `worker.py` has `fetch_once` and no loop, there is no `Dockerfile`, and
+  `docker-compose.yml` starts only Postgres. Proof it matters — Ribeira's `spot_grid` row
+  was overwritten by a pre-isolation test and pointed at the rounded coordinates from
+  `tests/helpers.py`, so the spot vanished from every ranking for four days and nothing
+  complained. A manual `gogo fetch` fixed it by accident.
+
+  Needed: the fetch loop, a container image for api and worker, one small host, and a
+  nightly `pg_dump`. Ordered *after* the page on purpose — a week of using it on a phone
+  over local wifi will change the page, and it is cheaper to change before it is hosted
+  than after.
 - [x] **S6 · Archive backfill.** `gogo backfill --from --to` against the Open-Meteo
   archive + marine archive, written with `source='archive-era5'` and `is_analysis = true`.
   Reanalysis is not a forecast; without the flag, Q2 numbers quietly assume hindsight.

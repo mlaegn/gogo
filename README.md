@@ -11,7 +11,9 @@ Saturday 07:00–10:00 · Ribeira d'Ilhas · 78
 offshore, incoming mid, 1.3 m @ 11 s NW
 ```
 
-The API returns exactly that: a ranked list of **time ranges**, one per spot, each with the hour it peaks. The phone page is next — the UI is how this is meant to be used.
+That is what the page shows: a ranked list of **time ranges** for any day in the next
+week, one per spot, each with the hour it peaks — and a card that asks how it actually
+was, without showing you what we predicted first.
 
 ## Status
 
@@ -32,7 +34,9 @@ The API returns exactly that: a ranked list of **time ranges**, one per spot, ea
 | `gogo backfill` — ERA5 reanalysis, never served | done |
 | `gogo weekend --db` / `GET /windows` | done (read stored rows) |
 | Windows as time ranges (score v2) | done |
-| Hourly worker process | **not yet** |
+| Any day, not just Saturday — `/windows?day=` | done |
+| Mobile page: windows + blind post-session card | done |
+| Hourly worker process, and a host to run it on | **not yet** |
 | ~100 observations — the Stage 1 gate | **not yet** |
 | UI, accounts, session log, deploy | later |
 
@@ -84,8 +88,15 @@ make weekend            # fixture, no network
 make fetch              # Open-Meteo → Postgres
 make weekend-db         # score stored rows
 make api                # http://127.0.0.1:8000/windows
+make web                # the page, key "devkey"
+make phone              # same, reachable from your phone on this wifi
 make down               # stop Postgres; volume (data) stays
 ```
+
+The page is where labels come from, so it is the way to use this. `make phone` prints a
+LAN address and a key — open it on your phone and add it to the home screen. An unset
+`GOGO_WEB_SECRET` means the page is **off** rather than open, so set a real one anywhere
+that is not your laptop.
 
 Recording what you saw, which is what the score gets calibrated against:
 
@@ -142,7 +153,9 @@ src/gogo/store.py            # seed, persist, load current
 src/gogo/worker.py           # fetch_once, backfill (loop comes next)
 src/gogo/importer.py         # CSV of remembered sessions → labels
 src/gogo/cli.py              # gogo weekend | fetch | backfill | migrate | log | import
-src/gogo/api.py              # GET /health, GET /windows
+src/gogo/serving.py          # pick a day, score it, record what we showed
+src/gogo/api.py              # GET /health, /days, /windows?day=
+src/gogo/web.py              # the page; templates/ + static/ ship with it
 src/gogo/clock.py            # UTC inside, Lisbon at the edges
 src/gogo/versioning.py       # spec_version for a spot
 src/gogo/migrate.py          # numbered SQL, schema_migrations
