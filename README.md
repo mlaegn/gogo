@@ -32,13 +32,13 @@ was, without showing you what we predicted first.
 | `gogo import` — bulk CSV of remembered sessions | done |
 | `gogo fetch` | done (one-shot) |
 | `gogo backfill` — ERA5 reanalysis, never served | done |
-| `gogo weekend --db` / `GET /windows` | done (read stored rows) |
+| `gogo weekend --db` / `GET /api/windows` | done (read stored rows) |
 | Windows as time ranges (score v2) | done |
-| Any day, not just Saturday — `/windows?day=` | done |
-| Mobile page: windows + blind post-session card | done |
+| Any day, not just Saturday — `/api/windows?day=` | done |
+| Mobile page (React + TS): windows + blind post-session card | done |
 | Hourly worker process, and a host to run it on | **not yet** |
 | ~100 observations — the Stage 1 gate | **not yet** |
-| UI, accounts, session log, deploy | later |
+| Accounts and invite-only groups, deploy | later |
 
 Thesis [`surfreporter`](https://github.com/MaximilianLae/surfreporter) is reference only.
 
@@ -52,21 +52,21 @@ lands without a backtest number.
 gogo fetch          → Open-Meteo → snapshots + current (worker writes)
 gogo backfill       → ERA5 archive → snapshots only, is_analysis
 gogo weekend --db   → read current → group Saturday into ranges → print
-GET /windows        → same as --db, JSON
+GET /api/windows    → same as --db, JSON (cookie-gated)
 ```
 
 `backfill` exists so past sessions can be labelled without waiting for new ones. It never
 writes `forecast_current`: reanalysis is what happened, and serving it would make the
 score look clairvoyant.
 
-The API does **not** call Open-Meteo. If current is empty, `/windows` returns 503 until you `fetch`.
+The API does **not** call Open-Meteo. If current is empty, `/api/windows` returns 503 until you `fetch`.
 
 ## Stack
 
 | Piece | Choice | Why |
 |---|---|---|
 | Language | Python 3.12 | Score and domain are the hard part |
-| API | FastAPI | `/health`, `/windows` |
+| API | FastAPI | `/health` open, `/api/*` behind the cookie |
 | Store | Postgres 16 | Snapshots + current row + later session log |
 | Forecast | Open-Meteo Marine + Forecast | Hourly swell, wind-sea, wind, sea-level |
 | Local engine | OrbStack | Runs the same `docker compose` file |
@@ -87,8 +87,9 @@ make test
 make weekend            # fixture, no network
 make fetch              # Open-Meteo → Postgres
 make weekend-db         # score stored rows
-make api                # http://127.0.0.1:8000/windows
-make web                # the page, key "devkey"
+make api                # http://127.0.0.1:8000/api/windows
+make ui                 # build the page (needs Node; once, then when the UI changes)
+make web                # serve it, key "devkey"
 make phone              # same, reachable from your phone on this wifi
 make down               # stop Postgres; volume (data) stays
 ```
@@ -97,6 +98,15 @@ The page is where labels come from, so it is the way to use this. `make phone` p
 LAN address and a key — open it on your phone and add it to the home screen. An unset
 `GOGO_WEB_SECRET` means the page is **off** rather than open, so set a real one anywhere
 that is not your laptop.
+
+The frontend is Vite + React + TypeScript in `web/`, built into the Python package and
+served same-origin, so the cookie is the only auth and there is no CORS. `make install`
+stays Python-only — the score, the worker and the tests never need Node.
+
+```bash
+make ui-dev             # Vite on :5173 with `make web` behind it, hot reload
+make ui-types           # regenerate client types from FastAPI's schema; CI diffs this
+```
 
 Recording what you saw, which is what the score gets calibrated against:
 
@@ -154,14 +164,16 @@ src/gogo/worker.py           # fetch_once, backfill (loop comes next)
 src/gogo/importer.py         # CSV of remembered sessions → labels
 src/gogo/cli.py              # gogo weekend | fetch | backfill | migrate | log | import
 src/gogo/serving.py          # pick a day, score it, record what we showed
-src/gogo/api.py              # GET /health, /days, /windows?day=
-src/gogo/web.py              # the page; templates/ + static/ ship with it
+src/gogo/api.py              # /health + /api: days, windows?day=, spots, observations
+src/gogo/schemas.py          # the wire format; web/src/api/schema.d.ts is generated from it
+src/gogo/web.py              # the login form and the app shell; templates/ + static/ ship
+web/                         # Vite + React + TS → built into src/gogo/static/app
 src/gogo/clock.py            # UTC inside, Lisbon at the edges
 src/gogo/versioning.py       # spec_version for a spot
 src/gogo/migrate.py          # numbered SQL, schema_migrations
 src/gogo/migrations/         # applied by gogo migrate, never by Postgres
 uv.lock                      # pinned Python deps; make install / CI use this
-.github/workflows/test.yml   # pytest + compose Postgres
+.github/workflows/test.yml   # pytest + compose Postgres; typecheck, build, type drift
 tests/                       # ranks, ingest mocks, store roundtrip
 ```
 

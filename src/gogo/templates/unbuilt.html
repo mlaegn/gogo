@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Not built · Gogo{% endblock %}
+
+{% block content %}
+<h1 class="spot-title">The app is not built</h1>
+<p class="sub">The routes are here but the bundle is not: nothing at
+  <code>{{ path }}</code>. Vite output is generated, not committed, so a fresh checkout
+  has to build it once.</p>
+<p class="sub">Run <code>make ui</code>, or <code>make dev</code> while you are working
+  on the frontend.</p>
+{% endblock %}

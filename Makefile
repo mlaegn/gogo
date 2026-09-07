@@ -1,7 +1,30 @@
-.PHONY: install test weekend weekend-live weekend-db fetch backfill api web phone up down migrate
+.PHONY: install test weekend weekend-live weekend-db fetch backfill api web phone up down \
+	migrate ui ui-deps ui-dev ui-types openapi
 
+# Python only, on purpose: the score, the worker and the tests must stay installable
+# without a Node toolchain. `make ui` is the frontend's entry point.
 install:
 	uv sync --python 3.12
+
+ui-deps:
+	cd web && npm install
+
+# Typecheck then bundle into src/gogo/static/app, where FastAPI serves it from.
+ui: ui-deps
+	cd web && npm run build
+
+# Frontend work: this on :5173 with `make web` running behind it on :8000.
+ui-dev:
+	cd web && npm run dev
+
+# FastAPI's schema, dumped without starting a server.
+openapi:
+	.venv/bin/python -c "import json; from gogo.api import app; print(json.dumps(app.openapi(), indent=2))" > openapi.json
+
+# Regenerate the client's types from that schema. CI runs this and fails on a diff, so
+# renaming a field in Python breaks the build instead of rendering an empty span.
+ui-types: openapi
+	cd web && npm run types
 
 test:
 	.venv/bin/pytest -q
@@ -26,6 +49,7 @@ api:
 	.venv/bin/uvicorn gogo.api:app --reload --app-dir src
 
 # The page. An unset GOGO_WEB_SECRET means off, not open, so dev sets a throwaway one.
+# Needs `make ui` once, or it serves a "not built" notice instead of the app.
 web:
 	GOGO_WEB_SECRET=$${GOGO_WEB_SECRET:-devkey} \
 		.venv/bin/uvicorn gogo.api:app --reload --app-dir src

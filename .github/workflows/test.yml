@@ -32,3 +32,42 @@ jobs:
       - name: Stop Postgres
         if: always()
         run: docker compose down
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # Needed only to dump FastAPI's schema for the drift check below; no database.
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          uv sync --python 3.12
+          npm ci --prefix web
+
+      - name: Typecheck
+        run: npm run typecheck --prefix web
+
+      # The reason this stack is worth its cost: a field renamed in schemas.py without
+      # regenerating the client types fails here instead of rendering an empty span in
+      # production. Run `make ui-types` and commit the result.
+      - name: Client types match the API
+        run: |
+          make ui-types
+          # --intent-to-add so an *untracked* schema.d.ts is a failure too. Without it
+          # git diff ignores the file entirely and this check passes by seeing nothing.
+          git add --intent-to-add web/src/api/schema.d.ts
+          git diff --exit-code web/src/api/schema.d.ts \
+            || { echo "::error::web/src/api/schema.d.ts is stale — run 'make ui-types' and commit it"; exit 1; }
+
+      - name: Build
+        run: npm run build --prefix web

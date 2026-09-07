@@ -147,10 +147,30 @@ one user — start labelling with it immediately, and let the UI unblock everybo
   secret writing to a single seeded user. An unset `GOGO_WEB_SECRET` means the page is
   *off*, not open, and there is no "localhost is exempt" shortcut — behind a proxy the
   client address is the proxy's, so that exemption publishes the site.
-- [x] **S5c · Minimal mobile web UI.** Server-rendered Jinja, hand-written CSS, no build
-  step, no framework: a form posts and the page reloads. Fewer moving parts than a client
-  app, and it works on a cold phone with one bar of signal. `templates/` and `static/` are
-  package data beside `coast.yml`, so a wheel that ships the routes also ships the page.
+- [x] **S5c · Minimal mobile web UI.** Vite + React + TypeScript, hand-written CSS, no
+  component library. Built to `src/gogo/static/app` and served by FastAPI same-origin, so
+  the wheel that ships the routes also ships the app — the bundle is an `artifacts` entry
+  in `pyproject.toml` because it is gitignored and hatchling would otherwise drop it.
+
+  **First built server-rendered, then replaced.** The Jinja version was the right size for
+  four read-and-submit screens and is still the honest answer on one bar of signal, where a
+  form POST degrades and a bundle gives you a white screen. It was replaced deliberately,
+  for the frontend surface and the ecosystem, once the trade was understood rather than
+  assumed. The real cost is 78 kB gzipped where there had been none, and a Node toolchain
+  in CI. The real gain is below.
+
+  **Types cross the boundary.** `schemas.py` declares the wire format so FastAPI's OpenAPI
+  schema is precise, `make ui-types` generates `web/src/api/schema.d.ts` from it, and CI
+  regenerates and diffs that file. A field renamed in Python now fails the build instead of
+  rendering an empty span — which is exactly how the Jinja version could fail, silently.
+  The diff uses `git add --intent-to-add`, because `git diff` ignores untracked files and
+  the check would otherwise pass by seeing nothing.
+
+  **The door stays server-side.** `/enter` is still a Jinja form setting an `httponly`
+  cookie, so the secret never touches JavaScript and cannot be read out of devtools. Same
+  origin means that cookie is also all the auth the API needs: no tokens, no CORS. Every
+  `/api` route requires it — an open `/api/windows` would let anyone write rows to
+  `window_impressions` and fabricate the record of what we supposedly recommended.
 
   Main screen: a day picker, one headline window, then the ranked rest, detail behind a
   tap. A closed spot still gets a row — a wrong veto has to leave a trace.
@@ -160,8 +180,15 @@ one user — start labelling with it immediately, and let the UI unblock everybo
   but that is a *relative* question and asking it requires showing the score first, which
   is the anchoring trap two lines further down. So the card asks 1–5 plus "would you go
   back" and optional fault codes, and the residual is computed later against the stored
-  impression. `test_web.py::test_the_log_card_never_shows_our_score` asserts against the
-  rendered HTML, because this is the property that makes the labels worth having.
+  impression.
+
+  In a client app this cannot be a promise the component makes — a score in the page's
+  JSON is a score on the device, one careless render or one devtools tab from leaking. So
+  it is a property of the endpoints instead: the log screen's only fetch is `/api/spots`,
+  which has no score in it to hide, and the reveal exists solely in the response to
+  `POST /api/observations`, by which time the rating is already stored.
+  `test_web.py::test_the_log_screens_only_payload_carries_no_score` pins the payload's
+  exact key set, so widening `SpotOut` fails the suite.
 
   `anchored` is set from `impression_for`: true only when we really had something on
   screen for that interval. A detail view records no impression — the log answers "what
@@ -195,7 +222,7 @@ one user — start labelling with it immediately, and let the UI unblock everybo
   came back complete — so what the last few days lack is finality, not data.
 
   *Tests:* `test_archive.py`, headed by the negative one — an analysis row must never
-  reach `forecast_current`, or `/windows` starts serving hours that already happened.
+  reach `forecast_current`, or `/api/windows` starts serving hours that already happened.
 - [x] **S7 · Bulk import.** `gogo import sessions.csv` — `date,spot,start,end` required,
   everything else optional. Local times, per-row errors naming the column and the value,
   and `--dry-run` because a hand-written file gets checked before it lands.

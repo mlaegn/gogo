@@ -17,13 +17,13 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **`forecast_current` is for serving. Evaluation reads `forecast_snapshots` at an as-of.** Backtesting against current leaks hindsight, because current is overwritten by later runs.
 - **Reanalysis is not a forecast.** `gogo backfill` writes `forecast_snapshots` with `is_analysis`, never `forecast_current`. Analysis answers "is the score right about real conditions"; only forecast rows filtered to an as-of can answer "would we have called it right at the time". The archive resolves to the same marine cells as the forecast, so the two join on the grid.
 - **Local engine is OrbStack**, not Docker Desktop. Same `docker compose` file.
-- **Worker writes, API reads.** `/windows` must not call Open-Meteo.
+- **Worker writes, API reads.** `/api/windows` must not call Open-Meteo.
 - **No EKS, Redis, Kafka, ClickHouse, Pinecone, Next.js, Auth0.** Identity is an app account (magic link or OAuth); invite-only is the anti-spam design. No Telegram client — the UI is the surface people check.
 - **Ratings pool globally, interpretation can be private.** Observations are anonymous global training signal. Group-scoped spec *overlays* (personal → group → base) are how private local knowledge works. Never fragment the label pool.
 - **A label has one row.** `unique (user_id, spot_id, started_at)`; `record_observation` returns `None` on a duplicate. Recalled sessions import unanchored and carry `rating`, never `residual` — nothing was predicted to them at the time. Same-day pairs are the sample size of the headline metric, so `kind=checked` rows are the point, not padding.
 - **Schema comes from `gogo migrate`**, not from Postgres. There is no initdb mount: `make up` starts the server and migrates it. Add a numbered file in `src/gogo/migrations/`; never edit an applied one.
 - **`coast.yml` and the migrations are package data**, under `src/gogo/`. They ship in the wheel and are found relative to `__file__`. Never resolve runtime input by walking up to the repo root — an installed wheel has no repo root.
-- **CI** runs `gogo migrate` then `pytest` against compose Postgres on GitHub Actions. Do not skip store tests locally if Postgres is up.
+- **CI** runs `gogo migrate` then `pytest` against compose Postgres on GitHub Actions, plus a second job for the frontend: typecheck, build, and a diff of the generated client types. Do not skip store tests locally if Postgres is up.
 - **Tests get their own database.** `tests/conftest.py` creates and migrates `gogo_test`, redirects `DATABASE_URL`, and truncates between tests. Never write a test that writes to `gogo` — a fabricated observation is indistinguishable from a real label once the harness exists.
 - **Deps** come from `uv.lock`. `make install` is `uv sync`. After changing `pyproject.toml`, run `uv lock` and commit the lockfile. `numpy`/`scipy` belong to the `eval` group only — never to the API or worker runtime.
 
@@ -33,6 +33,8 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 docs/plan.md             # the contract — which slice is next
 src/gogo/data/coast.yml  # the content — edit here first
 src/gogo/score.py        # pure, tested
+src/gogo/schemas.py      # the wire format; the client's types are generated from it
+web/                     # Vite + React + TS, built into src/gogo/static/app
 src/gogo/ingest/         # Open-Meteo: openmeteo.py forecast, archive.py reanalysis
 src/gogo/store.py        # Postgres
 src/gogo/worker.py       # fetch_once; loop is next
@@ -49,7 +51,12 @@ tests/fixtures/          # golden weekends
 2. Add or adjust a fixture in `tests/test_score.py`.
 3. `make test`. If a rank needs a paragraph of justification, the score is not done.
 
-Do not add a CSS framework, a vector DB, or an LLM while the score is still being argued. The page exists and is server-rendered Jinja with hand-written CSS — keep it that way; it is a form, not an app.
+Do not add a CSS framework, a vector DB, or an LLM while the score is still being argued. The page is Vite + React + TypeScript in `web/`, built into `src/gogo/static/app` and served by FastAPI same-origin; the CSS is hand-written and stays that way.
+
+- **The log screen must not be able to show our score.** Not "must not show" — *must not be able to*. Its only fetch is `/api/spots`, which carries no score, and the reveal lives only in the response to `POST /api/observations`. Never add a score field to `SpotOut`, and never let that screen read `/api/windows`.
+- **Types are generated, not hand-written.** `schemas.py` is the wire format; `make ui-types` regenerates `web/src/api/schema.d.ts`; CI fails on a diff. After changing an API model, run it and commit the result.
+- **The login stays server-rendered.** `/enter` is Jinja and the cookie is `httponly`, so the secret never reaches JavaScript. Same-origin serving is what keeps auth cookie-only — do not introduce tokens, CORS, or `localStorage`.
+- **The bundle is built, not committed.** `src/gogo/static/app` is gitignored and listed under `artifacts` in `pyproject.toml`. `make install` stays Python-only; the score, worker and tests must never need Node.
 
 **The log card must never show our score before the answer is saved.** Anchoring is the one bug in this system that produces data which looks fine and is worthless. `test_web.py` asserts it against rendered HTML; do not relax that test.
 

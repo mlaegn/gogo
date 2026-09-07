@@ -231,3 +231,9 @@ button {
   text-decoration: none;
   font-size: 0.95rem;
 }
+/* react-router's NavLink marks the current route. Server rendering never needed this:
+   the page you were on was the page you asked for. */
+.tabbar a.active {
+  color: var(--ink);
+  box-shadow: inset 0 2px 0 var(--go);
+}
