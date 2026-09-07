@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from gogo.assemble import saturday_morning
+from gogo.assemble import plan_day
 from gogo.clock import (
     LISBON,
     UTC,
@@ -90,31 +90,32 @@ def test_local_input_is_normalised_to_utc():
     assert hour.valid_at.tzinfo == timezone.utc
 
 
-def test_saturday_morning_is_local_not_utc():
-    """Saturday 08:00 Lisbon is 07:00Z in summer; UTC 08:00 must not win."""
-    hours = [
-        _hour(datetime(2026, 8, 29, 7, 0, tzinfo=UTC)),
-        _hour(datetime(2026, 8, 29, 8, 0, tzinfo=UTC)),
-    ]
-    when = saturday_morning(hours)
-    assert when == datetime(2026, 8, 29, 7, 0, tzinfo=UTC)
-    assert to_local(when).strftime("%A %H:%M") == "Saturday 08:00"
+def test_plan_day_is_a_local_saturday_not_a_utc_one():
+    """23:30Z on Friday is already Saturday in Lisbon, and the day must follow Lisbon."""
+    friday_late_utc = datetime(2026, 8, 28, 23, 30, tzinfo=UTC)
+    assert to_local(friday_late_utc).weekday() == 5
+    assert plan_day([_hour(friday_late_utc)]) == date(2026, 8, 29)
 
 
-def test_saturday_morning_picks_the_earliest_saturday():
+def test_plan_day_picks_the_earliest_saturday():
     hours = [
         _hour(datetime(2026, 9, 5, 7, 0, tzinfo=UTC)),
         _hour(datetime(2026, 8, 29, 7, 0, tzinfo=UTC)),
     ]
-    assert saturday_morning(hours) == datetime(2026, 8, 29, 7, 0, tzinfo=UTC)
+    assert plan_day(hours) == date(2026, 8, 29)
 
 
-def test_saturday_morning_skips_saturdays_that_already_happened():
+def test_plan_day_falls_back_to_the_first_day_when_no_saturday_is_in_range():
+    hours = [_hour(datetime(2026, 9, 1, 7, 0, tzinfo=UTC))]
+    assert plan_day(hours) == date(2026, 9, 1)
+
+
+def test_plan_day_skips_saturdays_that_already_happened():
     """forecast_current keeps every hour ever fetched, including last weekend's."""
     gone = datetime(2026, 8, 29, 7, 0, tzinfo=UTC)
     coming = datetime(2026, 9, 5, 7, 0, tzinfo=UTC)
     hours = [_hour(gone), _hour(coming)]
 
-    assert saturday_morning(hours, not_before=datetime(2026, 9, 3, 12, 0, tzinfo=UTC)) == coming
-    assert saturday_morning(hours, not_before=None) == gone
-    assert saturday_morning(hours, not_before=datetime(2027, 1, 1, tzinfo=UTC)) is None
+    assert plan_day(hours, not_before=datetime(2026, 9, 3, 12, 0, tzinfo=UTC)) == date(2026, 9, 5)
+    assert plan_day(hours, not_before=None) == date(2026, 8, 29)
+    assert plan_day(hours, not_before=datetime(2027, 1, 1, tzinfo=UTC)) is None

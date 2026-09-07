@@ -5,7 +5,7 @@ import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from gogo.assemble import saturday_morning, score_spots_at
+from gogo.assemble import plan_day, windows_for_day
 from gogo.clock import from_local_input, now_utc, to_local
 from gogo.importer import parse_file, summarise
 from gogo.ingest.archive import PROVISIONAL_DAYS, SOURCE, TIDE_FROM
@@ -34,10 +34,9 @@ def _load_fixture(path: Path) -> list[GridHour]:
     return [GridHour.model_validate(row) for row in raw]
 
 
-def print_ranking(when: datetime, ranked: list[WindowScore]) -> None:
-    local = to_local(when)
+def print_ranking(day: date, ranked: list[WindowScore]) -> None:
     print(
-        f"Windows around {local.strftime('%A %Y-%m-%d %H:%M')} Europe/Lisbon"
+        f"Windows for {day.strftime('%A %Y-%m-%d')} Europe/Lisbon"
         f"  ·  score {SCORE_VERSION}\n"
     )
     for w in ranked:
@@ -45,7 +44,14 @@ def print_ranking(when: datetime, ranked: list[WindowScore]) -> None:
         why = "; ".join(
             r.detail for r in w.reasons if r.points == 0 or r.code in {"wind", "size", "period"}
         )
-        print(f"  {mark}  {w.score:3d}  {w.spot_name}")
+        # A closed spot has no window to name; its span is just the hours we searched.
+        if w.verdict == "no":
+            span = "—"
+        else:
+            span = f"{to_local(w.starts_at):%H:%M}–{to_local(w.ends_at):%H:%M}"
+            if w.hours > 1:
+                span += f"  ({w.hours}h, peak {to_local(w.peak_at):%H:%M} at {w.peak_score})"
+        print(f"  {mark}  {w.score:3d}  {w.spot_name:<18}  {span}")
         print(f"         {why}")
 
 
@@ -59,15 +65,15 @@ def weekend(fixture: Path | None, from_db: bool) -> int:
             if not hours:
                 print("No stored forecasts. Run: gogo fetch")
                 return 1
-            when = saturday_morning(hours, not_before=now_utc())
-            if when is None:
+            day = plan_day(hours, not_before=now_utc())
+            if day is None:
                 print("No upcoming hours to score. Run: gogo fetch")
                 return 1
-            ranked = score_spots_at(spots, hours, when)
+            ranked = windows_for_day(spots, hours, day)
             as_of = current_as_of(conn)
             if as_of is not None:
                 record_impressions(conn, ranked, spots, as_of, surface="cli")
-        print_ranking(when, ranked)
+        print_ranking(day, ranked)
         return 0
     else:
         src = OpenMeteoSource()
@@ -77,11 +83,11 @@ def weekend(fixture: Path | None, from_db: bool) -> int:
             src.close()
 
     # Fixtures are historical on purpose; a live fetch is not.
-    when = saturday_morning(hours, not_before=None if fixture else now_utc())
-    if when is None:
+    day = plan_day(hours, not_before=None if fixture else now_utc())
+    if day is None:
         print("No hours to score.")
         return 1
-    print_ranking(when, score_spots_at(spots, hours, when))
+    print_ranking(day, windows_for_day(spots, hours, day))
     return 0
 
 

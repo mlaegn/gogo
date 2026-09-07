@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 from gogo.geo import angle_distance, in_bearing_window, window_center
-from gogo.models import HourForecast, Reason, Spot, Verdict, WindowScore
+from gogo.models import HourForecast, HourScore, Reason, Spot, Verdict
 
 # Bump on any change that can move a rank: weights, thresholds, gates, new terms, or the
 # rule that aggregates hours into a window. A stored verdict is meaningless without it.
-SCORE_VERSION = "v1"
+#
+# v2 — the served unit became a range. Per-hour scoring is unchanged from v1; what
+# changed is that adjacent passing hours are grouped and ranked by their mean, so the
+# same forecast can now produce a different ranking.
+SCORE_VERSION = "v2"
 
 # Onshore is ~180° from the spot's offshore_from.
 _ONSHORE_ALIGN_DEG = 75
 
 
-def score_window(spot: Spot, hour: HourForecast) -> WindowScore:
+def verdict_for(score: int, vetoed: bool = False) -> Verdict:
+    """The go / maybe / no thresholds, shared by an hour and by a window of hours."""
+    return "no" if vetoed or score < 40 else "go" if score >= 70 else "maybe"
+
+
+def score_hour(spot: Spot, hour: HourForecast) -> HourScore:
     reasons: list[Reason] = []
     vetoed = False
 
@@ -167,19 +176,18 @@ def score_window(spot: Spot, hour: HourForecast) -> WindowScore:
         )
 
     total = 0 if vetoed else min(100, sum(r.points for r in reasons))
-    verdict: Verdict = "no" if vetoed or total < 40 else "go" if total >= 70 else "maybe"
-    return WindowScore(
+    return HourScore(
         spot_id=spot.id,
         spot_name=spot.name,
         valid_at=hour.valid_at,
         score=total,
-        verdict=verdict,
+        verdict=verdict_for(total, vetoed),
         reasons=reasons,
         vetoed=vetoed,
     )
 
 
-def rank_hour(spots: list[Spot], hour: HourForecast) -> list[WindowScore]:
-    ranked = [score_window(s, hour) for s in spots]
+def rank_hour(spots: list[Spot], hour: HourForecast) -> list[HourScore]:
+    ranked = [score_hour(s, hour) for s in spots]
     ranked.sort(key=lambda w: (-w.score, w.spot_name))
     return ranked

@@ -94,14 +94,39 @@ carries the cost Telegram would have absorbed: identity, notifications, and a fr
 To stop the deadline slipping behind a web app, `gogo log` (S3) is the day-one path for
 one user — start labelling with it immediately, and let the UI unblock everybody else.
 
-- [ ] **S5 · Windows as time ranges.** Promoted from "later": a UI showing a single
+- [x] **S5 · Windows as time ranges.** Promoted from "later": a UI showing a single
   Saturday 08:00 is pointless, and an observation is an interval, so the prediction has to
-  be one too. The interval-aggregation rule (max? mean? worst hour? trend-weighted?) is
-  part of the score's definition — pick one, write it down, bump `SCORE_VERSION`, and treat
-  changing it as a version bump. This is the product unit, not a calibration change, so it
-  is not blocked by the Stage 2 gate. (The past-hours bug was pulled forward into S4:
-  `saturday_morning` takes `not_before`, because impressions were recording
-  recommendations for a Saturday that had already been and gone.)
+  be one too.
+
+  **The rule chosen, now `SCORE_VERSION = "v2"`:** score every hour, then group
+  consecutive hours that are not `no` into a run. A failing hour ends a run rather than
+  averaging into it — a session is continuous, and 25 kn of onshore at 10:00 does not
+  become tolerable because 09:00 was clean — and a gap in the data ends one too. Window
+  score is the **mean** over member hours; `reasons` come from the member hour nearest
+  that mean, so the sentence explains the number instead of the best moment inside it;
+  `peak_at` and `peak_score` are kept alongside for "best around 09:30". `ends_at` is
+  exclusive. Ranked by score, then duration: between equal means, the longer window is
+  the better drive. Per-hour scoring is untouched from v1, so the bump records that the
+  same forecast can now produce a different ranking.
+
+  `WindowScore` is now the range and `HourScore` is what the score function returns —
+  they were one type pretending to be both. `saturday_morning` became `plan_day`
+  returning a *local date*, since a window is chosen within a day rather than being an
+  instant. A spot with no passing hour still gets a row, with the span searched and the
+  reason the closest hour failed: a wrong veto has to leave a trace.
+
+  Two placeholders are now visible and named. `SURFABLE_FROM_HOUR`/`UNTIL_HOUR` (06–20
+  local) stand in for daylight — without a bound the run finder offers a glassy 03:00 as
+  the day's best call — and S12 replaces them with sunrise and sunset. And the mean
+  intra-day score spread measured across the coast is only **32 points**, with Carcavelos
+  at 5, which is why several spots come back as a single 14-hour window: the score has
+  almost no intra-day resolution, because the only terms that move within a day are wind
+  and a three-phase tide proxy. That is a measurement in favour of S12's continuous tide,
+  and the harness should quantify it rather than a weight change guessing at it.
+
+  (The past-hours bug was pulled forward into S4: the day picker takes `not_before`,
+  because impressions were recording recommendations for a Saturday that had already been
+  and gone.) *Tests:* `test_windows.py`.
 - [ ] **S5b · Accounts and invites.** Magic-link email or GitHub/Google OAuth, plus login
   sessions and an invite table. Invite-only *is* the anti-spam design — it makes Sybil
   resistance a non-problem for years. No Auth0. (Note the word collision: a *login*

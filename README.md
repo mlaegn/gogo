@@ -11,11 +11,11 @@ Saturday 07:00–10:00 · Ribeira d'Ilhas · 78
 offshore, incoming mid, 1.3 m @ 11 s NW
 ```
 
-The API already returns a ranked list (today: **one hour**, Saturday 08:00). Grouping hours into ranges like the example above is next, then the phone page — the UI is how this is meant to be used.
+The API returns exactly that: a ranked list of **time ranges**, one per spot, each with the hour it peaks. The phone page is next — the UI is how this is meant to be used.
 
 ## Status
 
-**Phase 2 — store + fetch.** Forecasts persist. The score is unchanged.
+**Phase 2 — store, fetch, windows.** Forecasts persist and are served as ranges. Labels are the bottleneck.
 
 | Piece | State |
 |---|---|
@@ -31,8 +31,9 @@ The API already returns a ranked list (today: **one hour**, Saturday 08:00). Gro
 | `gogo fetch` | done (one-shot) |
 | `gogo backfill` — ERA5 reanalysis, never served | done |
 | `gogo weekend --db` / `GET /windows` | done (read stored rows) |
+| Windows as time ranges (score v2) | done |
 | Hourly worker process | **not yet** |
-| Windows as time ranges | **not yet** |
+| ~100 observations — the Stage 1 gate | **not yet** |
 | UI, accounts, session log, deploy | later |
 
 Thesis [`surfreporter`](https://github.com/MaximilianLae/surfreporter) is reference only.
@@ -46,7 +47,7 @@ lands without a backtest number.
 ```text
 gogo fetch          → Open-Meteo → snapshots + current (worker writes)
 gogo backfill       → ERA5 archive → snapshots only, is_analysis
-gogo weekend --db   → read current → score Saturday 08:00 → print
+gogo weekend --db   → read current → group Saturday into ranges → print
 GET /windows        → same as --db, JSON
 ```
 

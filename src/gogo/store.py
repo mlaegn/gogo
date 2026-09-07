@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import psycopg
 from psycopg.rows import dict_row
@@ -310,13 +310,13 @@ def record_impressions(
     spots: list[Spot],
     as_of: datetime,
     surface: str,
-    window_hours: int = 1,
     user_id: int | None = None,
 ) -> int:
     """Write down what we showed. Append-only; a re-request writes a new row.
 
-    Windows are still single hours, so window_end is window_start + one hour. S5 makes
-    them real ranges and this signature stops lying.
+    The stored range is the window's own range, so an observation logged 07:15–09:00
+    overlaps whatever we actually recommended rather than a single hour standing in
+    for it.
     """
     versions = {spot.id: spec_version(spot) for spot in spots}
     sql = """
@@ -332,8 +332,8 @@ def record_impressions(
                 (
                     user_id,
                     window.spot_id,
-                    window.valid_at,
-                    window.valid_at + timedelta(hours=window_hours),
+                    window.starts_at,
+                    window.ends_at,
                     to_utc(as_of),
                     surface,
                     position,

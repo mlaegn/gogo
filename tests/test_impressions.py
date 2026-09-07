@@ -1,16 +1,17 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
+from helpers import grid_day
 
-from gogo.clock import UTC
+from gogo.assemble import windows_for_day
+from gogo.clock import UTC, from_local_input
 from gogo.migrate import migrate, migration_files
-from gogo.models import HourForecast
-from gogo.score import SCORE_VERSION, rank_hour
+from gogo.score import SCORE_VERSION
 from gogo.spots import load_spots
 from gogo.store import connect, impression_for, record_impressions, seed_spots
 from gogo.versioning import spec_version
 
-WHEN = datetime(2026, 9, 5, 7, 0, tzinfo=UTC)
+DAY = date(2026, 9, 5)  # a Saturday
 
 
 def _conn():
@@ -21,16 +22,8 @@ def _conn():
 
 
 def _ranked():
-    hour = HourForecast(
-        valid_at=WHEN,
-        swell_height_m=1.4,
-        swell_from_deg=295,
-        swell_period_s=11.0,
-        wind_speed_kn=7.0,
-        wind_from_deg=80,
-        tide="mid",
-    )
-    return rank_hour(load_spots(), hour)
+    spots = load_spots()
+    return windows_for_day(spots, grid_day(DAY, spots), DAY)
 
 
 def test_impressions_are_stamped_and_findable():
@@ -45,7 +38,7 @@ def test_impressions_are_stamped_and_findable():
         assert written == len(ranked)
 
         top = ranked[0]
-        found = impression_for(conn, top.spot_id, WHEN, WHEN + timedelta(hours=1))
+        found = impression_for(conn, top.spot_id, top.starts_at, top.ends_at)
 
     assert found is not None
     assert found["score"] == top.score
@@ -54,6 +47,24 @@ def test_impressions_are_stamped_and_findable():
     assert found["spec_version"] == spec_version(
         next(s for s in spots if s.id == top.spot_id)
     )
+
+
+def test_an_observation_inside_the_window_pairs_with_it():
+    """The reason ranges matter: a 07:15–09:00 session overlaps a 07:00–11:00 window
+    but would have missed a single stored 08:00 hour by 45 minutes."""
+    spots = load_spots()
+    ranked = _ranked()
+    top = ranked[0]
+    assert top.hours > 1, "fixture should produce a multi-hour window"
+    conn = _conn()
+    with conn:
+        seed_spots(conn, spots)
+        record_impressions(
+            conn, ranked, spots, datetime(2026, 9, 3, 6, 0, tzinfo=UTC), surface="cli"
+        )
+        session_start = from_local_input(DAY, "07:15")
+        session_end = from_local_input(DAY, "09:00")
+        assert impression_for(conn, top.spot_id, session_start, session_end) is not None
 
 
 def test_impression_lookup_ignores_a_non_overlapping_window():
@@ -66,7 +77,7 @@ def test_impression_lookup_ignores_a_non_overlapping_window():
             conn, ranked, spots, datetime(2026, 9, 3, 6, 0, tzinfo=UTC), surface="cli"
         )
         # A session two days later must not pair with today's recommendation.
-        away = WHEN + timedelta(days=2)
+        away = ranked[0].ends_at + timedelta(days=2)
         assert impression_for(conn, ranked[0].spot_id, away, away + timedelta(hours=1)) is None
 
 

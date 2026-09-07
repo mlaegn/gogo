@@ -90,7 +90,9 @@ class Observation(BaseModel):
         return self
 
 
-class WindowScore(BaseModel):
+class HourScore(BaseModel):
+    """One spot, one hour. What the score function decides; not what gets served."""
+
     spot_id: str
     spot_name: str
     valid_at: UtcDatetime
@@ -98,3 +100,39 @@ class WindowScore(BaseModel):
     verdict: Verdict
     reasons: list[Reason]
     vetoed: bool = False
+
+
+class WindowScore(BaseModel):
+    """A run of adjacent hours that all pass, served as one time range.
+
+    This is the product unit. A person surfs an interval and reports an interval, so a
+    prediction has to be one too — ranking a single 08:00 against a session that ran
+    07:15 to 09:00 compares a point to a range.
+
+    `score` is the mean over member hours and `reasons` come from the member hour whose
+    score is nearest that mean, so the sentence explains the number rather than the best
+    moment in it. `peak_at` is kept separately for "best around 09:30".
+
+    `ends_at` is exclusive: it is the start of the hour after the last member, so a
+    single 08:00 hour spans 08:00–09:00 and `hours` counts 1.
+    """
+
+    spot_id: str
+    spot_name: str
+    starts_at: UtcDatetime
+    ends_at: UtcDatetime
+    peak_at: UtcDatetime
+    hours: int = Field(ge=1)
+    score: int = Field(ge=0, le=100)
+    peak_score: int = Field(ge=0, le=100)
+    verdict: Verdict
+    reasons: list[Reason]
+    vetoed: bool = False
+
+    @model_validator(mode="after")
+    def _range_runs_forwards(self) -> WindowScore:
+        if self.ends_at <= self.starts_at:
+            raise ValueError("ends_at must be after starts_at")
+        if not self.starts_at <= self.peak_at < self.ends_at:
+            raise ValueError("peak_at must fall inside the window")
+        return self

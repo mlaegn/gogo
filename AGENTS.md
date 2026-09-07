@@ -13,6 +13,7 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **UTC inside, Lisbon at the edges.** Every stored and passed timestamp is timezone-aware UTC. Local time exists only in CLI output, API responses, and later the UI. "Saturday 08:00" is a *local* concept and must be resolved in `Europe/Lisbon`.
 - **Tide** from `sea_level_height_msl` is a phase (low/mid/high), not a navigation table. Compare to Hidrográfico before trusting the tide term. S12 replaces it with height + rate.
 - **Score decides.** LLM is not in the path. Reasons must explain a rank in one sentence.
+- **A window is a run of adjacent passing hours** (score v2). Score every hour, group consecutive non-`no` hours, rank by the mean and then by duration. A `no` hour or a gap in the data ends a run. `reasons` come from the member hour nearest the mean, so the sentence explains the number; `peak_at` is kept alongside. `ends_at` is exclusive. Changing this rule is a `SCORE_VERSION` bump, not a tweak.
 - **`forecast_current` is for serving. Evaluation reads `forecast_snapshots` at an as-of.** Backtesting against current leaks hindsight, because current is overwritten by later runs.
 - **Reanalysis is not a forecast.** `gogo backfill` writes `forecast_snapshots` with `is_analysis`, never `forecast_current`. Analysis answers "is the score right about real conditions"; only forecast rows filtered to an as-of can answer "would we have called it right at the time". The archive resolves to the same marine cells as the forecast, so the two join on the grid.
 - **Local engine is OrbStack**, not Docker Desktop. Same `docker compose` file.
@@ -48,6 +49,6 @@ tests/fixtures/          # golden weekends
 2. Add or adjust a fixture in `tests/test_score.py`.
 3. `make test`. If a rank needs a paragraph of justification, the score is not done.
 
-Do not add a CSS framework, a vector DB, or an LLM while the score is still being argued. Do not add a UI until `/windows` returns time ranges, not a single Saturday 08:00.
+Do not add a CSS framework, a vector DB, or an LLM while the score is still being argued. `/windows` now returns time ranges, so the UI gate is open — but a UI collects labels from other people, and the first hundred are still yours to log.
 
 **No score improvements before the evaluation harness exists** (`docs/plan.md`, Stage 2 gate). A weight change without a backtest number is an opinion.
