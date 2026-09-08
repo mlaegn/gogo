@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 
 import { api } from "../api/client";
-import { clock, dayLabel, span, todayInLisbon, why } from "../format";
+import { clock, dayLabel, fetchedAt, regionLabel, span, todayInLisbon, why } from "../format";
 import { useAsync } from "../useAsync";
 
 export function WindowsScreen() {
@@ -9,7 +9,20 @@ export function WindowsScreen() {
   const day = params.get("day") ?? undefined;
   const result = useAsync(() => api.windows(day), [day]);
 
-  if (result.state === "loading") return <p className="sub">Reading the forecast…</p>;
+  if (result.state === "loading") {
+    return (
+      <>
+        <div className="days skeleton-days" aria-hidden="true">
+          <span className="day" />
+          <span className="day" />
+          <span className="day" />
+        </div>
+        <div className="headline skeleton-card" aria-busy="true">
+          <p className="sub">Reading the forecast…</p>
+        </div>
+      </>
+    );
+  }
   if (result.state === "error") {
     return (
       <>
@@ -24,9 +37,10 @@ export function WindowsScreen() {
   // Windows arrive ranked, so the first that is not a "no" is the day's call.
   const best = windows.find((w) => w.verdict !== "no");
   const rest = windows.filter((w) => w.spot_id !== best?.spot_id);
+  const refreshing = result.state === "refreshing";
 
   return (
-    <>
+    <div className={refreshing ? "refreshing" : undefined}>
       <div className="days">
         {days.map((d) => (
           <Link
@@ -42,12 +56,19 @@ export function WindowsScreen() {
       {best ? (
         <>
           <Link className={`headline v-${best.verdict}`} to={`/spot/${best.spot_id}?day=${shown}`}>
-            <div className="verdict">{best.verdict}</div>
+            <div className="eyebrow">
+              <span className="verdict">{best.verdict}</span>
+              <span className="region">{regionLabel(best.region)}</span>
+            </div>
             <h1>{best.spot_name}</h1>
             <div className="window">{span(best)}</div>
             <div className="meta">
-              {best.score}
-              {best.hours > 1 && ` · ${best.hours}h · best ${clock(best.peak_at_local)}`}
+              <span className="score-pill">{best.score}</span>
+              {best.hours > 1 && (
+                <span>
+                  {best.hours}h · best {clock(best.peak_at_local)}
+                </span>
+              )}
             </div>
             <p className="why">{why(best.reasons)}</p>
           </Link>
@@ -60,7 +81,9 @@ export function WindowsScreen() {
         </>
       ) : (
         <div className="headline v-no">
-          <div className="verdict">no</div>
+          <div className="eyebrow">
+            <span className="verdict">no</span>
+          </div>
           <h1>Nowhere, {dayLabel(shown, today).toLowerCase()}</h1>
           <p className="why">
             Every spot is out. That is an answer too — and if it turns out to be wrong, log
@@ -74,14 +97,17 @@ export function WindowsScreen() {
           <li key={w.spot_id} className={`v-${w.verdict}`}>
             <Link to={`/spot/${w.spot_id}?day=${shown}`}>
               <span className="score">{w.score}</span>
-              <span className="name">{w.spot_name}</span>
+              <span className="place">
+                <span className="name">{w.spot_name}</span>
+                <span className="hint">{regionLabel(w.region)}</span>
+              </span>
               <span className="span">{w.verdict === "no" ? "—" : span(w)}</span>
             </Link>
           </li>
         ))}
       </ol>
 
-      {as_of && <p className="asof">Forecast fetched {as_of.slice(5, 16).replace("T", " ")}</p>}
-    </>
+      {as_of && <p className="asof">Updated {fetchedAt(as_of)}</p>}
+    </div>
   );
 }

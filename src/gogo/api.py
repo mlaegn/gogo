@@ -57,10 +57,13 @@ def _served(day: date | None, surface: str | None) -> Served:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-def _window_out(w: WindowScore, versions: dict[str, str]) -> WindowOut:
+def _window_out(
+    w: WindowScore, versions: dict[str, str], regions: dict[str, str]
+) -> WindowOut:
     return WindowOut(
         spot_id=w.spot_id,
         spot_name=w.spot_name,
+        region=regions[w.spot_id],
         spec_version=versions.get(w.spot_id),
         starts_at=w.starts_at,
         ends_at=w.ends_at,
@@ -79,13 +82,14 @@ def _window_out(w: WindowScore, versions: dict[str, str]) -> WindowOut:
 
 def _windows_out(served: Served) -> WindowsOut:
     versions = {spot.id: spec_version(spot) for spot in served.spots}
+    regions = {spot.id: spot.region for spot in served.spots}
     return WindowsOut(
         day=served.day,
         days=served.days,
         timezone=LISBON.key,
         score_version=SCORE_VERSION,
         as_of=served.as_of,
-        windows=[_window_out(w, versions) for w in served.windows],
+        windows=[_window_out(w, versions, regions) for w in served.windows],
     )
 
 

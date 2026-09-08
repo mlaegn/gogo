@@ -119,10 +119,23 @@ def manifest() -> JSONResponse:
             "display": "standalone",
             "background_color": "#0b1622",
             "theme_color": "#0b1622",
-            "icons": [],
+            "icons": [
+                {
+                    "src": "/static/favicon.svg",
+                    "sizes": "any",
+                    "type": "image/svg+xml",
+                    "purpose": "any",
+                }
+            ],
         },
         media_type="application/manifest+json",
     )
+
+
+@router.get("/favicon.ico", include_in_schema=False)
+def favicon() -> RedirectResponse:
+    """Browsers ask for this unprompted; the catch-all would 303 it into /enter."""
+    return RedirectResponse("/static/favicon.svg", status_code=302)
 
 
 # Registered last in api.py: this catches everything the routes above did not, so the

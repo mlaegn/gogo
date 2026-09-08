@@ -33,6 +33,7 @@ class ReasonOut(BaseModel):
 class WindowOut(BaseModel):
     spot_id: str
     spot_name: str
+    region: Region
     spec_version: str | None = None
     # UTC to compute with, local to display. Deriving one from the other in a browser is
     # where timezone bugs come from, so the server sends both.

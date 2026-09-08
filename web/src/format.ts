@@ -10,6 +10,20 @@ export const clock = (localIso: string) => localIso.slice(11, 16);
 export const span = (w: Window) =>
   `${clock(w.starts_at_local)}–${clock(w.ends_at_local)}`;
 
+export const regionLabel = (region: string): string =>
+  region.charAt(0).toUpperCase() + region.slice(1);
+
+/** Forecast fetch time as "14:36", Lisbon wall clock, from an ISO timestamp. */
+export function fetchedAt(iso: string): string {
+  const local = new Date(iso).toLocaleTimeString("en-GB", {
+    timeZone: "Europe/Lisbon",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return local;
+}
+
 /** The one-sentence why: failures always, plus the terms a person actually asks about. */
 export function why(reasons: Reason[]): string {
   return reasons

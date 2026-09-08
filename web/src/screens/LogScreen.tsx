@@ -8,7 +8,7 @@ import type {
   SavedObservation,
 } from "../api/client";
 import { ApiError, api } from "../api/client";
-import { lisbonClock, todayInLisbon } from "../format";
+import { lisbonClock, regionLabel, todayInLisbon } from "../format";
 import { useAsync } from "../useAsync";
 
 const RATINGS = [
@@ -42,7 +42,13 @@ const FAULTS: ReadonlyArray<readonly [FaultCode, string]> = [
   ["tide", "wrong tide"],
 ];
 
-function Reveal({ saved }: { saved: SavedObservation }) {
+function Reveal({
+  saved,
+  onAgain,
+}: {
+  saved: SavedObservation;
+  onAgain: () => void;
+}) {
   return (
     <>
       {saved.duplicate ? (
@@ -69,10 +75,7 @@ function Reveal({ saved }: { saved: SavedObservation }) {
             <p>
               We had said <strong>{saved.shown.score}</strong> ({saved.shown.verdict}).
             </p>
-            <p className="sub">
-              Scored by {saved.shown.score_version} on spec {saved.shown.spec_version}.
-              Your rating was recorded before you saw this.
-            </p>
+            <p className="sub">Your rating was recorded before you saw this.</p>
           </>
         ) : (
           <>
@@ -85,8 +88,11 @@ function Reveal({ saved }: { saved: SavedObservation }) {
         )}
       </div>
 
-      <Link className="cta" to="/">
-        Back to the windows
+      <button type="button" className="cta" onClick={onAgain}>
+        Log another spot this day
+      </button>
+      <Link className="cta quiet" to="/">
+        Back to today
       </Link>
     </>
   );
@@ -117,7 +123,27 @@ export function LogScreen() {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
-  if (saved) return <Reveal saved={saved} />;
+  if (saved) {
+    return (
+      <Reveal
+        saved={saved}
+        onAgain={() => {
+          setSaved(null);
+          setRating(null);
+          setError(null);
+          setForm((prev) => ({
+            ...prev,
+            spot_id: "",
+            kind: "surfed",
+            would_return: null,
+            crowd: null,
+            faults: [],
+            note: null,
+          }));
+        }}
+      />
+    );
+  }
 
   type Field = Omit<NewObservation, "rating">;
   const set = <K extends keyof Field>(key: K, value: Field[K]) =>
@@ -171,10 +197,16 @@ export function LogScreen() {
           >
             <option value="">choose…</option>
             {spots.state === "ready" &&
-              spots.data.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
+              (["ericeira", "lisbon", "peniche"] as const).map((region) => (
+                <optgroup key={region} label={regionLabel(region)}>
+                  {spots.data
+                    .filter((s) => s.region === region)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                </optgroup>
               ))}
           </select>
         </label>
@@ -255,45 +287,47 @@ export function LogScreen() {
           ))}
         </fieldset>
 
-        <label>
-          Crowd
-          <select
-            value={form.crowd ?? ""}
-            onChange={(e) => set("crowd", (e.target.value || null) as CrowdReport | null)}
-          >
-            {CROWDS.map(([value, word]) => (
-              <option key={value} value={value}>
-                {word}
-              </option>
+        <details className="optional">
+          <summary>Crowd, faults, note</summary>
+
+          <label>
+            Crowd
+            <select
+              value={form.crowd ?? ""}
+              onChange={(e) => set("crowd", (e.target.value || null) as CrowdReport | null)}
+            >
+              {CROWDS.map(([value, word]) => (
+                <option key={value} value={value}>
+                  {word}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <fieldset className="faults">
+            <legend>Anything we got wrong?</legend>
+            {FAULTS.map(([code, word]) => (
+              <label className="check" key={code}>
+                <input
+                  type="checkbox"
+                  checked={form.faults?.includes(code) ?? false}
+                  onChange={() => toggleFault(code)}
+                />
+                <span>{word}</span>
+              </label>
             ))}
-          </select>
-        </label>
+          </fieldset>
 
-        <fieldset className="faults">
-          <legend>
-            Anything we got wrong? <small>optional</small>
-          </legend>
-          {FAULTS.map(([code, word]) => (
-            <label className="check" key={code}>
-              <input
-                type="checkbox"
-                checked={form.faults?.includes(code) ?? false}
-                onChange={() => toggleFault(code)}
-              />
-              <span>{word}</span>
-            </label>
-          ))}
-        </fieldset>
-
-        <label>
-          Note <small>optional</small>
-          <textarea
-            rows={2}
-            placeholder="sandbar shifted, only worked on the push…"
-            value={form.note ?? ""}
-            onChange={(e) => set("note", e.target.value || null)}
-          />
-        </label>
+          <label>
+            Note
+            <textarea
+              rows={2}
+              placeholder="sandbar shifted, only worked on the push…"
+              value={form.note ?? ""}
+              onChange={(e) => set("note", e.target.value || null)}
+            />
+          </label>
+        </details>
 
         <button type="submit" disabled={sending}>
           {sending ? "Saving…" : "Save"}

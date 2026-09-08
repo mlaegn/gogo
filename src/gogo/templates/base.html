@@ -6,11 +6,15 @@
   <meta name="theme-color" content="#0b1622">
   <title>{% block title %}Gogo{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/favicon.svg">
 </head>
 <body>
+<div class="app">
   <header><span class="wordmark">gogo</span></header>
   <main>
     {% block content %}{% endblock %}
   </main>
+</div>
 </body>
 </html>

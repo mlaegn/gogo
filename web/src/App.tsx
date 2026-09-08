@@ -9,7 +9,7 @@ function NotFound() {
     <>
       <h1 className="spot-title">Nothing here</h1>
       <p className="sub">
-        <Link to="/">Back to the windows</Link>
+        <Link to="/">Back to today</Link>
       </p>
     </>
   );
@@ -17,7 +17,7 @@ function NotFound() {
 
 export function App() {
   return (
-    <>
+    <div className="app">
       <header>
         <Link className="wordmark" to="/">
           gogo
@@ -33,10 +33,10 @@ export function App() {
       </main>
       <nav className="tabbar">
         <NavLink to="/" end>
-          Windows
+          Today
         </NavLink>
-        <NavLink to="/log">Log a session</NavLink>
+        <NavLink to="/log">Log</NavLink>
       </nav>
-    </>
+    </div>
   );
 }

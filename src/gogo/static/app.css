@@ -1,5 +1,4 @@
-/* Hand-written, no framework: the page is small enough that a framework would be more
-   bytes than the page. Sized for a thumb on a wet phone. */
+/* Hand-written, no framework. Sized for a thumb on a wet phone. */
 
 :root {
   --bg: #0b1622;
@@ -11,138 +10,238 @@
   --maybe: #f0b429;
   --no: #6b7f92;
   --tap: 48px;
+  --shell: 28rem;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  padding: 0 0 5rem;
   background: var(--bg);
   color: var(--ink);
   font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   -webkit-text-size-adjust: 100%;
 }
 
+#root, .app {
+  max-width: var(--shell);
+  margin: 0 auto;
+  min-height: 100dvh;
+}
+
+.app {
+  padding: 0 0 5.5rem;
+}
+
 header {
   display: flex;
   align-items: center;
-  padding: max(env(safe-area-inset-top), 0.9rem) 1rem 0.6rem;
+  padding: max(env(safe-area-inset-top), 0.85rem) 1.1rem 0.45rem;
 }
 
 .wordmark {
   color: var(--ink);
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-decoration: none;
+  font-size: 0.95rem;
 }
 
-main { padding: 0 1rem; }
+main { padding: 0 1.1rem; }
 
-h1 { font-size: 1.55rem; margin: 0.2rem 0; }
-.spot-title { margin-top: 0.6rem; }
-.sub { color: var(--dim); margin: 0.3rem 0 1.1rem; }
+h1 { font-size: 1.65rem; margin: 0.15rem 0; letter-spacing: -0.02em; }
+.spot-title { margin-top: 0.15rem; }
+.sub { color: var(--dim); margin: 0.35rem 0 1.1rem; }
 small { color: var(--dim); font-weight: 400; }
 
-/* Day picker: horizontal, scrolls past seven days without wrapping. */
+.crumb { margin: 0 0 0.4rem; }
+.crumb a {
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.refreshing { opacity: 0.55; transition: opacity 0.15s ease; }
+
 .days {
   display: flex;
   gap: 0.4rem;
   overflow-x: auto;
-  padding: 0.2rem 0 0.9rem;
+  padding: 0.15rem 0 0.95rem;
   scrollbar-width: none;
 }
 .days::-webkit-scrollbar { display: none; }
 .day {
   flex: 0 0 auto;
-  min-height: 40px;
+  min-height: 38px;
   display: flex;
   align-items: center;
-  padding: 0 0.85rem;
+  padding: 0 0.9rem;
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--dim);
   text-decoration: none;
   white-space: nowrap;
+  font-size: 0.92rem;
 }
-.day.on { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+.day.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.skeleton-days .day {
+  width: 4.2rem;
+  background: var(--card);
+  border-color: var(--line);
+}
+.skeleton-card { min-height: 9rem; }
 
 .headline {
   display: block;
   background: var(--card);
   border: 1px solid var(--line);
-  border-left: 5px solid var(--no);
-  border-radius: 14px;
-  padding: 1rem 1.1rem 1.15rem;
+  border-left: 4px solid var(--no);
+  border-radius: 16px;
+  padding: 1.05rem 1.15rem 1.2rem;
   color: inherit;
   text-decoration: none;
 }
+.eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
 .headline .verdict {
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  font-size: 0.7rem;
   font-weight: 700;
   color: var(--no);
 }
-.headline .window { font-size: 2rem; font-weight: 650; letter-spacing: -0.01em; }
-.headline .meta { color: var(--dim); margin-top: 0.15rem; }
-.headline .why { color: var(--dim); margin: 0.7rem 0 0; }
+.headline .region { color: var(--dim); font-size: 0.85rem; }
+.headline .window { font-size: 2.05rem; font-weight: 650; letter-spacing: -0.03em; margin-top: 0.15rem; }
+.headline .meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--dim);
+  margin-top: 0.45rem;
+}
+.score-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.4rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(232, 241, 248, 0.08);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+.headline .why { color: var(--dim); margin: 0.75rem 0 0; font-size: 0.95rem; }
 
 .v-go { border-left-color: var(--go); }
 .v-go .verdict { color: var(--go); }
 .v-maybe { border-left-color: var(--maybe); }
 .v-maybe .verdict { color: var(--maybe); }
 
-.ranked { list-style: none; margin: 1.1rem 0 0; padding: 0; }
+.ranked { list-style: none; margin: 0.9rem 0 0; padding: 0; }
 .ranked li { border-bottom: 1px solid var(--line); }
 .ranked a {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
-  min-height: var(--tap);
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.45rem 0;
   color: inherit;
   text-decoration: none;
 }
 .ranked .score {
-  flex: 0 0 2.4rem;
+  flex: 0 0 2.3rem;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
+  font-size: 1.05rem;
 }
-.ranked .name { flex: 1 1 auto; }
-.ranked .span { color: var(--dim); font-variant-numeric: tabular-nums; }
+.ranked .place { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.05rem; }
+.ranked .name { font-weight: 550; }
+.ranked .hint { color: var(--dim); font-size: 0.8rem; }
+.ranked .span { color: var(--dim); font-variant-numeric: tabular-nums; font-size: 0.9rem; }
 .ranked li.v-no .score, .ranked li.v-no .name { color: var(--no); }
 .ranked li.v-go .score { color: var(--go); }
+.ranked li.v-maybe .score { color: var(--maybe); }
 
-.asof { color: var(--dim); font-size: 0.85rem; margin-top: 1.4rem; }
+.asof { color: var(--dim); font-size: 0.82rem; margin-top: 1.3rem; }
 
-.cta {
+.cta, button.cta {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
   min-height: var(--tap);
-  margin: 1.1rem 0;
+  margin: 0.85rem 0 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--card);
   color: var(--ink);
   text-decoration: none;
   font-weight: 600;
+  font-size: 1rem;
+  font-family: inherit;
+}
+.cta.quiet {
+  background: transparent;
+  color: var(--dim);
+  font-weight: 500;
+  margin-top: 0.45rem;
 }
 
-.hours { width: 100%; border-collapse: collapse; }
-.hours td { border-bottom: 1px solid var(--line); padding: 0.55rem 0.4rem; vertical-align: top; }
-.hours .at { width: 3.6rem; font-variant-numeric: tabular-nums; color: var(--dim); }
-.hours .score { width: 2.6rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-.hours .why { color: var(--dim); font-size: 0.9rem; }
-.hours tr.v-go .score { color: var(--go); }
-.hours tr.v-maybe .score { color: var(--maybe); }
-.hours tr.v-no .score { color: var(--no); }
+.hours { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.hours li { border-bottom: 1px solid var(--line); }
+.hour-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0.35rem 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+  text-align: left;
+}
+.hours .at { width: 3.4rem; font-variant-numeric: tabular-nums; color: var(--dim); }
+.hours .bar {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.hours .bar i { display: block; height: 100%; background: var(--no); border-radius: inherit; }
+.hours .v-go .bar i { background: var(--go); }
+.hours .v-maybe .bar i { background: var(--maybe); }
+.hours .score {
+  width: 2.4rem;
+  text-align: right;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.hours .v-go .score { color: var(--go); }
+.hours .v-maybe .score { color: var(--maybe); }
+.hours .v-no .score { color: var(--no); }
+.hours .why { color: var(--dim); font-size: 0.9rem; margin: 0 0 0.75rem; padding-left: 4.1rem; }
 
-/* Forms: every control at least a thumb tall, 16px+ text so iOS does not zoom. */
 form { display: flex; flex-direction: column; gap: 1rem; }
 label { display: flex; flex-direction: column; gap: 0.35rem; color: var(--dim); }
-.row { display: flex; gap: 0.6rem; }
-.row label { flex: 1 1 0; }
+.row { display: flex; gap: 0.55rem; }
+.row label { flex: 1 1 0; min-width: 0; }
 
 select, input[type="date"], input[type="time"], input[type="password"], textarea {
   min-height: var(--tap);
@@ -180,6 +279,21 @@ legend { color: var(--dim); padding: 0 0 0.5rem; }
 .pick input:focus-visible + span { outline: 2px solid var(--go); outline-offset: 2px; }
 .pick.wide { flex: 1 1 40%; }
 
+.optional {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.35rem 0.9rem 0.9rem;
+}
+.optional summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.optional label, .optional fieldset { margin-top: 0.75rem; }
+
 .faults { display: flex; flex-direction: column; gap: 0.4rem; }
 .check { flex-direction: row; align-items: center; gap: 0.6rem; min-height: var(--tap); color: var(--ink); }
 .check input { width: 22px; height: 22px; accent-color: var(--go); }
@@ -194,6 +308,7 @@ button {
   font-weight: 700;
   font-family: inherit;
 }
+button:disabled { opacity: 0.55; }
 
 .error {
   background: #3a1c22;
@@ -206,20 +321,22 @@ button {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 0.9rem 1.1rem;
+  padding: 0.95rem 1.1rem;
 }
 .reveal p { margin: 0.3rem 0; }
 
 .tabbar {
   position: fixed;
   bottom: 0;
-  left: 0;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--shell);
   display: flex;
   background: rgba(11, 22, 34, 0.94);
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(10px);
 }
 .tabbar a {
   flex: 1 1 0;
@@ -231,8 +348,6 @@ button {
   text-decoration: none;
   font-size: 0.95rem;
 }
-/* react-router's NavLink marks the current route. Server rendering never needed this:
-   the page you were on was the page you asked for. */
 .tabbar a.active {
   color: var(--ink);
   box-shadow: inset 0 2px 0 var(--go);

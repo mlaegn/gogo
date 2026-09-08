@@ -364,6 +364,11 @@ export interface components {
             spot_id: string;
             /** Spot Name */
             spot_name: string;
+            /**
+             * Region
+             * @enum {string}
+             */
+            region: "ericeira" | "lisbon" | "peniche";
             /** Spec Version */
             spec_version?: string | null;
             /**

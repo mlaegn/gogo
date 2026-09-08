@@ -1,13 +1,15 @@
+import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../api/client";
-import { dayLabel, todayInLisbon } from "../format";
+import { dayLabel, regionLabel, todayInLisbon } from "../format";
 import { useAsync } from "../useAsync";
 
 export function SpotScreen() {
   const { spotId } = useParams();
   const [params] = useSearchParams();
   const day = params.get("day") ?? undefined;
+  const [openHour, setOpenHour] = useState<string | null>(null);
   const result = useAsync(
     () => (spotId ? api.spotDay(spotId, day) : Promise.reject(new Error("no spot"))),
     [spotId, day],
@@ -24,32 +26,47 @@ export function SpotScreen() {
   }
 
   const { spot, day: shown, hours } = result.data;
+  const listTo = shown === todayInLisbon() ? "/" : `/?day=${shown}`;
 
   return (
-    <>
+    <div className={result.state === "refreshing" ? "refreshing" : undefined}>
+      <p className="crumb">
+        <Link to={listTo}>← {dayLabel(shown, todayInLisbon())}</Link>
+      </p>
       <h1 className="spot-title">{spot.name}</h1>
       <p className="sub">
-        {dayLabel(shown, todayInLisbon())} · {spot.region} · wants {spot.size_min_m}–
-        {spot.size_max_m} m from {spot.swell_from_min}–{spot.swell_from_max}°, offshore{" "}
-        {spot.offshore_from}°
+        {regionLabel(spot.region)} · {spot.size_min_m}–{spot.size_max_m} m from{" "}
+        {spot.swell_from_min}–{spot.swell_from_max}° · offshore {spot.offshore_from}°
       </p>
 
-      <table className="hours">
-        <tbody>
-          {hours.map((h) => (
-            <tr key={h.valid_at} className={`v-${h.verdict}`}>
-              <td className="at">{h.at_local}</td>
-              <td className="score">{h.score}</td>
-              {/* Every term here, not the headline's summary: this is the "show me why" view. */}
-              <td className="why">{h.reasons.map((r) => r.detail).join("; ")}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ol className="hours">
+        {hours.map((h) => {
+          const open = openHour === h.valid_at;
+          return (
+            <li key={h.valid_at} className={`v-${h.verdict}${open ? " open" : ""}`}>
+              <button
+                type="button"
+                className="hour-row"
+                onClick={() => setOpenHour(open ? null : h.valid_at)}
+                aria-expanded={open}
+              >
+                <span className="at">{h.at_local}</span>
+                <span className="bar" aria-hidden="true">
+                  <i style={{ width: `${h.score}%` }} />
+                </span>
+                <span className="score">{h.score}</span>
+              </button>
+              {open && (
+                <p className="why">{h.reasons.map((r) => r.detail).join("; ")}</p>
+              )}
+            </li>
+          );
+        })}
+      </ol>
 
       <Link className="cta" to={`/log?spot=${spot.id}&day=${shown}`}>
         Log a session here
       </Link>
-    </>
+    </div>
   );
 }

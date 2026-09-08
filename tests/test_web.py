@@ -240,6 +240,7 @@ def test_windows_are_ranges_with_a_peak_inside_them(client):
         assert w["starts_at"] < w["ends_at"]
         assert w["starts_at"] <= w["peak_at"] < w["ends_at"]
         assert w["hours"] >= 1
+        assert w["region"] in {"ericeira", "lisbon", "peniche"}
 
 
 def test_a_day_we_have_no_forecast_for_is_a_404(client):
