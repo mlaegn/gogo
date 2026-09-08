@@ -252,21 +252,27 @@ def ensure_user(conn: psycopg.Connection, handle: str, skill: str = "advanced") 
 
 
 def record_observation(
-    conn: psycopg.Connection, user_id: int, obs: Observation
+    conn: psycopg.Connection,
+    user_id: int,
+    obs: Observation,
+    is_synthetic: bool = False,
 ) -> int | None:
     """Store one label. Returns its id, or None if that session was already recorded.
 
     None rather than an error because re-running an edited CSV is the normal way to
     import, and a duplicate is a no-op rather than a problem. See 004 for why the
     duplicate must not be allowed through.
+
+    `is_synthetic` defaults to false so that only `gogo demo`, which passes it
+    explicitly, can ever write a fixture row. See 006.
     """
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO observations
                 (user_id, spot_id, kind, scope, started_at, ended_at, residual,
-                 anchored, would_return, rating, crowd, note)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 anchored, would_return, rating, crowd, note, is_synthetic)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id, spot_id, started_at) DO NOTHING
             RETURNING id
             """,
@@ -283,6 +289,7 @@ def record_observation(
                 obs.rating,
                 obs.crowd,
                 obs.note,
+                is_synthetic,
             ),
         )
         row = cur.fetchone()
@@ -366,20 +373,17 @@ def impression_for(
         return cur.fetchone()
 
 
-def load_current_hours(conn: psycopg.Connection, spots: list[Spot]) -> list[GridHour]:
-    """Hours for each spot from its last grid, tagged with that spot's lat/lon."""
-    with conn.cursor() as cur:
-        cur.execute("SELECT spot_id, grid_lat, grid_lon FROM spot_grid")
-        cells = {row["spot_id"]: (row["grid_lat"], row["grid_lon"]) for row in cur.fetchall()}
-        cur.execute(
-            """
-            SELECT grid_lat, grid_lon, valid_at, source, payload
-            FROM forecast_current
-            """
-        )
-        by_grid: dict[tuple[float, float], list[dict]] = {}
-        for row in cur.fetchall():
-            by_grid.setdefault((row["grid_lat"], row["grid_lon"]), []).append(row)
+def _hours_from_rows(
+    spots: list[Spot], cells: dict[str, tuple[float, float]], rows: list[dict]
+) -> list[GridHour]:
+    """Re-hydrate stored payloads into `GridHour`, tagged with each spot's own lat/lon.
+
+    Two spots can share a marine cell, so the same row legitimately becomes an hour for
+    each of them — the tagging is what lets `assemble` split them apart again.
+    """
+    by_grid: dict[tuple[float, float], list[dict]] = {}
+    for row in rows:
+        by_grid.setdefault((row["grid_lat"], row["grid_lon"]), []).append(row)
 
     hours: list[GridHour] = []
     for spot in spots:
@@ -396,3 +400,101 @@ def load_current_hours(conn: psycopg.Connection, spots: list[Spot]) -> list[Grid
             payload["valid_at"] = to_utc(row["valid_at"])
             hours.append(GridHour.model_validate(payload))
     return hours
+
+
+def _grid_cells(conn: psycopg.Connection) -> dict[str, tuple[float, float]]:
+    with conn.cursor() as cur:
+        cur.execute("SELECT spot_id, grid_lat, grid_lon FROM spot_grid")
+        return {row["spot_id"]: (row["grid_lat"], row["grid_lon"]) for row in cur.fetchall()}
+
+
+def load_current_hours(conn: psycopg.Connection, spots: list[Spot]) -> list[GridHour]:
+    """Hours for each spot from its last grid, tagged with that spot's lat/lon."""
+    cells = _grid_cells(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT grid_lat, grid_lon, valid_at, source, payload
+            FROM forecast_current
+            """
+        )
+        rows = cur.fetchall()
+    return _hours_from_rows(spots, cells, rows)
+
+
+def load_analysis_hours(
+    conn: psycopg.Connection, spots: list[Spot], start: date, end: date
+) -> list[GridHour]:
+    """Reanalysis hours for the inclusive local day range `start`..`end`.
+
+    The best known estimate of what the ocean actually did, which is what Q1 — "is the
+    score right about real conditions" — has to be judged against. Never mixed with
+    `forecast_current`: that is a serving table and a past hour in it holds a nowcast.
+    """
+    cells = _grid_cells(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT grid_lat, grid_lon, valid_at, source, payload
+            FROM forecast_snapshots
+            WHERE is_analysis
+              AND (valid_at AT TIME ZONE %s)::date BETWEEN %s AND %s
+            """,
+            (LISBON.key, start, end),
+        )
+        rows = cur.fetchall()
+    return _hours_from_rows(spots, cells, rows)
+
+
+def count_observations(conn: psycopg.Connection, include_synthetic: bool = False) -> int:
+    """How many labels we hold. The Stage 1 gate is a number, so make it readable."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) AS n FROM observations"
+            + ("" if include_synthetic else " WHERE NOT is_synthetic")
+        )
+        return cur.fetchone()["n"]
+
+
+def load_observations(
+    conn: psycopg.Connection,
+    include_synthetic: bool = False,
+    only_synthetic: bool = False,
+) -> list[dict]:
+    """Labels, joined to their faults, real ones only unless asked otherwise.
+
+    `include_synthetic` defaults to false because this is the function an evaluation
+    will read through, and a metric that quietly counts `gogo demo` output is worse than
+    no metric — it looks authoritative and measures our own score against itself.
+
+    `only_synthetic` exists for the opposite reason: validating the harness on fixture
+    data with a known injected bias, where recovering that bias is the pass condition.
+    """
+    if only_synthetic and include_synthetic:
+        raise ValueError("only_synthetic and include_synthetic are contradictory")
+
+    where = (
+        "WHERE o.is_synthetic" if only_synthetic
+        else "" if include_synthetic
+        else "WHERE NOT o.is_synthetic"
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT o.id, o.user_id, u.handle, o.spot_id, o.kind, o.scope,
+                   o.started_at, o.ended_at, o.reported_at, o.residual, o.rating,
+                   o.would_return, o.crowd, o.note, o.anchored, o.is_synthetic,
+                   coalesce(
+                       array_agg(f.code || ':' || f.direction)
+                           FILTER (WHERE f.code IS NOT NULL),
+                       '{{}}'
+                   ) AS faults
+            FROM observations o
+            JOIN users u ON u.id = o.user_id
+            LEFT JOIN observation_faults f ON f.observation_id = o.id
+            {where}
+            GROUP BY o.id, u.handle
+            ORDER BY o.started_at, o.spot_id
+            """  # noqa: S608 - `where` is one of three literals above, never input
+        )
+        return [dict(row) for row in cur.fetchall()]

@@ -197,17 +197,56 @@ one user — start labelling with it immediately, and let the UI unblock everybo
 
   Notifications are still to come: web push (PWA on the home screen for iOS) with email as
   the fallback for the evening message. The manifest is there, so the page installs.
-- [ ] **S5d · Make it run without you.** The gap this plan never named: nothing runs by
-  itself. `worker.py` has `fetch_once` and no loop, there is no `Dockerfile`, and
-  `docker-compose.yml` starts only Postgres. Proof it matters — Ribeira's `spot_grid` row
-  was overwritten by a pre-isolation test and pointed at the rounded coordinates from
-  `tests/helpers.py`, so the spot vanished from every ranking for four days and nothing
-  complained. A manual `gogo fetch` fixed it by accident.
+- [~] **S5d · Make it run without you.** The gap this plan never named: nothing ran by
+  itself. Proof it matters — Ribeira's `spot_grid` row was overwritten by a pre-isolation
+  test and pointed at the rounded coordinates from `tests/helpers.py`, so the spot
+  vanished from every ranking for four days and nothing complained. A manual `gogo fetch`
+  fixed it by accident.
 
-  Needed: the fetch loop, a container image for api and worker, one small host, and a
-  nightly `pg_dump`. Ordered *after* the page on purpose — a week of using it on a phone
-  over local wifi will change the page, and it is cheaper to change before it is hosted
-  than after.
+  **Done: the loop.** `gogo worker --interval 3600`, with `--once` for a single cycle.
+  The reason it came before hosting rather than after is stronger than convenience: every
+  cycle stamps a `forecast_snapshots` row with `fetched_at`, and **that history is as
+  unrecoverable as a label**. The archive can tell us what the ocean did last Tuesday;
+  nothing can reconstruct what the forecast *said* on the Monday. Q2 is answered entirely
+  from those stamps, so a day the worker did not run is a permanent hole — and that is
+  true with zero users, which is why it does not wait for a host.
+
+  A failed cycle never ends the loop: exponential backoff capped at the interval, because
+  a worker that exits on the first timeout is indistinguishable from one that was never
+  started, except that it looks like it worked for a while. SIGTERM finishes the current
+  cycle rather than interrupting a half-written fetch. And `spots_without_hours` runs
+  every cycle and logs at ERROR, because the Ribeira failure mode is *silence* — a
+  ranking missing one spot looks entirely normal.
+
+  **Still open:** a container image for api and worker, one small host, and a nightly
+  `pg_dump`.
+- [x] **S5e · Fixture labels, quarantined.** `gogo demo` writes plausible sessions from
+  real reanalysis — real spots, real days, same-day pairs, three raters, a spread of
+  ratings — so Stage 2 can be built before 100 real labels exist. An evaluation pipeline
+  cannot be written against an empty table.
+
+  **The whole design is the quarantine.** These ratings are derived from our own score,
+  so a metric that counts them measures our assumptions and returns a flattering number
+  with nothing to reveal the mistake. `006` adds `is_synthetic`; `load_observations` and
+  `count_observations` exclude it by default; `record_observation` defaults to false so
+  only `demo` can write one. A column and not a naming convention, because handles get
+  renamed and a filter someone forgot is exactly how contamination happens. This is what
+  makes the frozen decision — that a fabricated observation is indistinguishable from a
+  real label — false by construction rather than by discipline.
+
+  **The bias is declared, and that is the point.** A synthetic rater who agreed with the
+  score would make every metric read 100% and prove nothing. This one likes size more
+  than we do (+14 points per metre over 1.2 m) and is noisy (sd 9). A working harness has
+  to *recover* that: accuracy below 100%, residuals tracking swell height. Feeding a
+  measuring device a known quantity and checking the reading is the only way to trust it
+  before pointing it at real labels.
+
+  Two realism bugs found by looking at the output rather than the tests: one rater was
+  surfing and checking two spots at the same instant, because slot offsets were derived
+  per-spot from each window rather than once per day; and ratings piled up on 5 because
+  the buckets were calibrated against the nominal 0–100 instead of the 65–90 the score
+  actually emits for spots worth driving to. Both mattered — a fixture with no middle
+  cannot test ranking, which is the one thing it exists to test.
 - [x] **S6 · Archive backfill.** `gogo backfill --from --to` against the Open-Meteo
   archive + marine archive, written with `source='archive-era5'` and `is_analysis = true`.
   Reanalysis is not a forecast; without the flag, Q2 numbers quietly assume hindsight.

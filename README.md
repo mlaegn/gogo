@@ -36,7 +36,9 @@ was, without showing you what we predicted first.
 | Windows as time ranges (score v2) | done |
 | Any day, not just Saturday — `/api/windows?day=` | done |
 | Mobile page (React + TS): windows + blind post-session card | done |
-| Hourly worker process, and a host to run it on | **not yet** |
+| `gogo worker` — fetch loop with backoff + coverage check | done |
+| `gogo demo` — quarantined fixture labels for harness work | done |
+| A host to run the worker on, container image, backups | **not yet** |
 | ~100 observations — the Stage 1 gate | **not yet** |
 | Accounts and invite-only groups, deploy | later |
 
@@ -50,6 +52,7 @@ lands without a backtest number.
 
 ```text
 gogo fetch          → Open-Meteo → snapshots + current (worker writes)
+gogo worker         → the same on a loop; snapshot history is unrecoverable
 gogo backfill       → ERA5 archive → snapshots only, is_analysis
 gogo weekend --db   → read current → group Saturday into ranges → print
 GET /api/windows    → same as --db, JSON (cookie-gated)
@@ -143,6 +146,30 @@ gogo import sessions.csv --dry-run   # check it, write nothing
 gogo import sessions.csv
 ```
 
+### Fixture labels, and why they are fenced off
+
+The evaluation harness cannot be written against an empty table, so `gogo demo` invents
+sessions from stored reanalysis — real spots, real days, same-day pairs, three raters.
+
+```bash
+gogo demo --days 40     # write fixture labels
+gogo demo --purge       # remove every one of them; real labels untouched
+```
+
+Every row carries `is_synthetic`, and `load_observations` and `count_observations`
+exclude it by default. This matters more than it sounds: the ratings are derived from our
+own score, so **any metric that counts them is measuring our own assumptions** and will
+come back flattering with nothing to reveal the error. A column rather than a naming
+convention, because a filter someone forgot is exactly how that happens.
+
+The synthetic rater has an opinion we wrote down — it likes size more than the score
+does, and it is noisy. A harness that reports perfect agreement with it has a bug, since
+it is supposed to detect exactly that disagreement. Feeding a measuring device a known
+quantity is the only way to trust its reading before pointing it at real labels.
+
+Fixture labels can validate the harness. They can never say whether the score is any
+good; only real ones can do that.
+
 Rows land unanchored, since no score was visible to you at the time. Re-running an edited
 file corrects it rather than duplicating it. The output counts **same-day spot pairs**,
 not just rows — ranking accuracy compares two spots on one day, so fifty one-spot days
@@ -160,7 +187,8 @@ src/gogo/score.py            # pure, tested
 src/gogo/ingest/openmeteo.py # the only forecast source for v1
 src/gogo/ingest/archive.py   # ERA5 reanalysis — past hours, never served
 src/gogo/store.py            # seed, persist, load current
-src/gogo/worker.py           # fetch_once, backfill (loop comes next)
+src/gogo/worker.py           # fetch_once, run_forever, backfill
+src/gogo/demo.py             # FIXTURE labels for harness work, never real data
 src/gogo/importer.py         # CSV of remembered sessions → labels
 src/gogo/cli.py              # gogo weekend | fetch | backfill | migrate | log | import
 src/gogo/serving.py          # pick a day, score it, record what we showed

@@ -2,11 +2,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from gogo.assemble import plan_day, windows_for_day
 from gogo.clock import from_local_input, now_utc, to_local
+from gogo.demo import (
+    BIAS_PIVOT_M,
+    NOISE_SD,
+    SIZE_BIAS_PER_M,
+    generate,
+    pick_days,
+)
 from gogo.importer import parse_file, summarise
 from gogo.ingest.archive import PROVISIONAL_DAYS, SOURCE, TIDE_FROM
 from gogo.ingest.openmeteo import OpenMeteoSource
@@ -18,15 +27,23 @@ from gogo.spots import by_id, load_spots
 from gogo.store import (
     analysis_days,
     connection,
+    count_observations,
     current_as_of,
     ensure_user,
     impression_for,
+    load_analysis_hours,
     load_current_hours,
     record_impressions,
     record_observation,
     seed_spots,
 )
-from gogo.worker import backfill, fetch_once
+from gogo.worker import (
+    backfill,
+    fetch_once,
+    install_signal_handlers,
+    run_forever,
+    spots_without_hours,
+)
 
 
 def _load_fixture(path: Path) -> list[GridHour]:
@@ -217,6 +234,80 @@ def run_backfill(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_worker(args) -> int:
+    """The loop that keeps the forecast fresh and the snapshot history unbroken."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    if args.once:
+        written = fetch_once()
+        print(f"Stored {written} current grid-hours.")
+        missing = spots_without_hours()
+        if missing:
+            print(f"WARNING  no hours for: {', '.join(missing)}")
+            return 1
+        return 0
+
+    stop = threading.Event()
+    install_signal_handlers(stop)
+    print(f"Fetching every {args.interval}s. Ctrl-C to stop.")
+    run_forever(interval_s=args.interval, stop=stop)
+    return 0
+
+
+def run_demo(args) -> int:
+    """Write fixture labels, loudly.
+
+    Kept deliberately noisy: the risk with synthetic data is not that it exists, it is
+    that six months later nobody remembers which rows it was.
+    """
+    with connection() as conn:
+        if args.purge:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM observations WHERE is_synthetic RETURNING id")
+                removed = len(cur.fetchall())
+            conn.commit()
+            print(f"Deleted {removed} synthetic labels. Real labels: {count_observations(conn)}.")
+            return 0
+
+        spots = load_spots()
+        covered = analysis_days(conn)
+        if not covered:
+            print("No reanalysis stored. Run: gogo backfill --from ... --to ...")
+            return 1
+
+        days = pick_days(covered, args.days)
+        hours = load_analysis_hours(conn, spots, min(days), max(days))
+        sessions = generate(spots, hours, days)
+        if not sessions:
+            print("Nothing generated — no scorable hours on the days picked.")
+            return 1
+
+        written = 0
+        for session in sessions:
+            user_id = ensure_user(conn, session.handle)
+            if record_observation(conn, user_id, session.observation, is_synthetic=True):
+                written += 1
+
+        real = count_observations(conn)
+
+    observations = [s.observation for s in sessions]
+    print("=" * 68)
+    print("SYNTHETIC FIXTURE DATA — never include this in an evaluation number.")
+    print("=" * 68)
+    for line in summarise(observations):
+        print(f"  {line}")
+    print(f"  {written} written, {len(sessions) - written} already present")
+    print(
+        f"\n  Injected bias: +{SIZE_BIAS_PER_M:.0f} pts per metre of swell over "
+        f"{BIAS_PIVOT_M} m, noise sd {NOISE_SD:.0f}."
+    )
+    print("  A harness that reports perfect agreement has a bug — it must see that bias.")
+    print(f"\n  Real labels, still: {real}. Only these can measure the score.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="gogo")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -294,6 +385,32 @@ def main(argv: list[str] | None = None) -> int:
         help="Parse and report pairs and gaps without writing anything.",
     )
 
+    wk = sub.add_parser(
+        "worker",
+        help="Fetch on a loop until stopped. Snapshot history is unrecoverable.",
+    )
+    wk.add_argument(
+        "--interval",
+        type=int,
+        default=3600,
+        metavar="SECONDS",
+        help="Seconds between fetches (default 3600).",
+    )
+    wk.add_argument("--once", action="store_true", help="One cycle, then exit.")
+
+    demo = sub.add_parser(
+        "demo",
+        help="Write FIXTURE labels for harness development. Never real data.",
+    )
+    demo.add_argument(
+        "--days", type=int, default=40, help="How many past days to invent sessions for."
+    )
+    demo.add_argument(
+        "--purge",
+        action="store_true",
+        help="Delete every synthetic label and exit. Real labels are untouched.",
+    )
+
     args = parser.parse_args(argv)
     if args.cmd == "weekend":
         return weekend(args.fixture, args.db)
@@ -307,6 +424,10 @@ def main(argv: list[str] | None = None) -> int:
         return log_observation(args)
     if args.cmd == "import":
         return import_observations(args)
+    if args.cmd == "worker":
+        return run_worker(args)
+    if args.cmd == "demo":
+        return run_demo(args)
     return 1
 
 

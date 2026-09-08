@@ -25,6 +25,8 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **`coast.yml` and the migrations are package data**, under `src/gogo/`. They ship in the wheel and are found relative to `__file__`. Never resolve runtime input by walking up to the repo root — an installed wheel has no repo root.
 - **CI** runs `gogo migrate` then `pytest` against compose Postgres on GitHub Actions, plus a second job for the frontend: typecheck, build, and a diff of the generated client types. Do not skip store tests locally if Postgres is up.
 - **Tests get their own database.** `tests/conftest.py` creates and migrates `gogo_test`, redirects `DATABASE_URL`, and truncates between tests. Never write a test that writes to `gogo` — a fabricated observation is indistinguishable from a real label once the harness exists.
+- **Synthetic labels exist, and are quarantined by a column.** `gogo demo` writes fixture sessions so the Stage 2 harness can be built before real labels exist; every row carries `is_synthetic` (006). They are generated *from our own score*, so a metric that counts them measures our assumptions and comes back flattering. `load_observations` and `count_observations` exclude them by default and `record_observation` defaults to false — never invert those defaults, and never report a number that included them. `gogo demo --purge` removes them all.
+- **The worker's snapshot history is unrecoverable.** Each cycle stamps `forecast_snapshots.fetched_at`; the archive can say what the ocean did, but nothing can reconstruct what the forecast *said* beforehand. A day the worker did not run is a permanent hole in the only data that answers Q2. A failed fetch must never end the loop, and `spots_without_hours` runs every cycle because a ranking quietly missing a spot looks completely normal.
 - **Deps** come from `uv.lock`. `make install` is `uv sync`. After changing `pyproject.toml`, run `uv lock` and commit the lockfile. `numpy`/`scipy` belong to the `eval` group only — never to the API or worker runtime.
 
 ## Layout
@@ -37,7 +39,8 @@ src/gogo/schemas.py      # the wire format; the client's types are generated fro
 web/                     # Vite + React + TS, built into src/gogo/static/app
 src/gogo/ingest/         # Open-Meteo: openmeteo.py forecast, archive.py reanalysis
 src/gogo/store.py        # Postgres
-src/gogo/worker.py       # fetch_once; loop is next
+src/gogo/worker.py       # fetch_once, run_forever, backfill
+src/gogo/demo.py         # FIXTURE labels for harness work — never real data
 src/gogo/clock.py        # UTC inside, Lisbon at the edges
 src/gogo/versioning.py   # spec_version; SCORE_VERSION lives in score.py
 src/gogo/migrate.py      # gogo migrate
