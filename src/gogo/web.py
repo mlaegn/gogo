@@ -117,8 +117,8 @@ def manifest() -> JSONResponse:
             "short_name": "Gogo",
             "start_url": "/",
             "display": "standalone",
-            "background_color": "#0b1622",
-            "theme_color": "#0b1622",
+            "background_color": "#071018",
+            "theme_color": "#071018",
             "icons": [
                 {
                     "src": "/static/favicon.svg",

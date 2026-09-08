@@ -7,6 +7,18 @@ import type { Reason, Window } from "./api/client";
  */
 export const clock = (localIso: string) => localIso.slice(11, 16);
 
+/** Next clock hour, as HH:MM. Used to turn an inclusive hour into an exclusive end. */
+export function nextClock(hhmm: string): string {
+  const hour = Number(hhmm.slice(0, 2)) + 1;
+  const minute = hhmm.slice(3, 5);
+  return `${String(Math.min(hour, 23)).padStart(2, "0")}:${minute}`;
+}
+
+/** Fractional local hour from a server-sent local ISO string. */
+export function localHour(localIso: string): number {
+  return Number(localIso.slice(11, 13)) + Number(localIso.slice(14, 16)) / 60;
+}
+
 export const span = (w: Window) =>
   `${clock(w.starts_at_local)}–${clock(w.ends_at_local)}`;
 
@@ -66,4 +78,16 @@ export const todayInLisbon = (): string =>
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+  }).format(new Date());
+
+/** Local ISO the strip can place a now-needle from, for a Lisbon calendar day. */
+export const lisbonNowLocal = (day: string): string => `${day}T${lisbonClock()}:00`;
+
+/** Short date for the chart-room header: "Tue 8 Sep". */
+export const lisbonHeaderDate = (): string =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Lisbon",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
   }).format(new Date());

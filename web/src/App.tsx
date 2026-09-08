@@ -1,5 +1,7 @@
-import { Link, NavLink, Route, Routes } from "react-router-dom";
+import { useLayoutEffect } from "react";
+import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
+import { lisbonHeaderDate } from "./format";
 import { LogScreen } from "./screens/LogScreen";
 import { SpotScreen } from "./screens/SpotScreen";
 import { WindowsScreen } from "./screens/WindowsScreen";
@@ -16,12 +18,22 @@ function NotFound() {
 }
 
 export function App() {
+  const location = useLocation();
+  const room = location.pathname.startsWith("/log") ? "notebook" : "chart";
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.room = room;
+    const theme = document.querySelector('meta[name="theme-color"]');
+    theme?.setAttribute("content", room === "notebook" ? "#141210" : "#071018");
+  }, [room]);
+
   return (
-    <div className="app">
+    <div className={`app room-${room}`}>
       <header>
-        <Link className="wordmark" to="/">
-          gogo
+        <Link className="wordmark" to="/" aria-label="gogo">
+          go<span>go</span>
         </Link>
+        <span className="when">{room === "notebook" ? "after" : lisbonHeaderDate()}</span>
       </header>
       <main>
         <Routes>

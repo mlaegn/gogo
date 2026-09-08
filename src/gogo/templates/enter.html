@@ -2,6 +2,7 @@
 {% block title %}Enter · Gogo{% endblock %}
 
 {% block content %}
+<p class="kicker">Lisbon · Ericeira · Peniche</p>
 <h1 class="spot-title">Private</h1>
 <p class="sub">One key, one user, until real accounts land.</p>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
@@ -9,4 +10,14 @@
   <label>Key <input type="password" name="key" autocomplete="current-password" required autofocus></label>
   <button type="submit">Enter</button>
 </form>
+<div class="strip strip-hero v-go login-strip" aria-hidden="true">
+  <div class="strip-frame">
+    <div class="strip-track">
+      <i class="strip-lit" style="left:32%;width:24%"></i>
+    </div>
+    <b class="strip-peak" style="left:44%"></b>
+  </div>
+  <div class="strip-scale"><span>06</span><span>12</span><span>20</span></div>
+</div>
+<p class="login-coast">The day, drawn</p>
 {% endblock %}

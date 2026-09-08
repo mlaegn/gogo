@@ -1,7 +1,17 @@
 import { Link, useSearchParams } from "react-router-dom";
 
+import { DayStrip } from "../DayStrip";
 import { api } from "../api/client";
-import { clock, dayLabel, fetchedAt, regionLabel, span, todayInLisbon, why } from "../format";
+import {
+  clock,
+  dayLabel,
+  fetchedAt,
+  lisbonNowLocal,
+  regionLabel,
+  span,
+  todayInLisbon,
+  why,
+} from "../format";
 import { useAsync } from "../useAsync";
 
 export function WindowsScreen() {
@@ -34,7 +44,7 @@ export function WindowsScreen() {
 
   const { day: shown, days, windows, as_of } = result.data;
   const today = todayInLisbon();
-  // Windows arrive ranked, so the first that is not a "no" is the day's call.
+  const nowLocal = shown === today ? lisbonNowLocal(shown) : undefined;
   const best = windows.find((w) => w.verdict !== "no");
   const rest = windows.filter((w) => w.spot_id !== best?.spot_id);
   const refreshing = result.state === "refreshing";
@@ -60,13 +70,21 @@ export function WindowsScreen() {
               <span className="verdict">{best.verdict}</span>
               <span className="region">{regionLabel(best.region)}</span>
             </div>
-            <h1>{best.spot_name}</h1>
             <div className="window">{span(best)}</div>
+            <h1>{best.spot_name}</h1>
+            <DayStrip
+              startsLocal={best.starts_at_local}
+              endsLocal={best.ends_at_local}
+              peakLocal={best.peak_at_local}
+              nowLocal={nowLocal}
+              verdict={best.verdict}
+              size="hero"
+            />
             <div className="meta">
               <span className="score-pill">{best.score}</span>
               {best.hours > 1 && (
                 <span>
-                  {best.hours}h · best {clock(best.peak_at_local)}
+                  {best.hours}h · peak {clock(best.peak_at_local)}
                 </span>
               )}
             </div>
@@ -85,6 +103,13 @@ export function WindowsScreen() {
             <span className="verdict">no</span>
           </div>
           <h1>Nowhere, {dayLabel(shown, today).toLowerCase()}</h1>
+          <DayStrip
+            startsLocal={`${shown}T06:00:00`}
+            endsLocal={`${shown}T06:00:00`}
+            nowLocal={nowLocal}
+            verdict="no"
+            size="hero"
+          />
           <p className="why">
             Every spot is out. That is an answer too — and if it turns out to be wrong, log
             a session anyway so the veto gets caught.
@@ -98,10 +123,20 @@ export function WindowsScreen() {
             <Link to={`/spot/${w.spot_id}?day=${shown}`}>
               <span className="score">{w.score}</span>
               <span className="place">
-                <span className="name">{w.spot_name}</span>
-                <span className="hint">{regionLabel(w.region)}</span>
+                <span className="who">
+                  <span className="name">{w.spot_name}</span>
+                  <span className="where">{regionLabel(w.region)}</span>
+                </span>
+                <DayStrip
+                  startsLocal={w.starts_at_local}
+                  endsLocal={w.ends_at_local}
+                  peakLocal={w.peak_at_local}
+                  nowLocal={nowLocal}
+                  verdict={w.verdict}
+                  size="row"
+                />
               </span>
-              <span className="span">{w.verdict === "no" ? "—" : span(w)}</span>
+              <span className="span">{w.verdict === "no" ? "out" : span(w)}</span>
             </Link>
           </li>
         ))}

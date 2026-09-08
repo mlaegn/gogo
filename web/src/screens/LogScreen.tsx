@@ -50,7 +50,7 @@ function Reveal({
   onAgain: () => void;
 }) {
   return (
-    <>
+    <div className="notebook-page">
       {saved.duplicate ? (
         <>
           <h1 className="spot-title">Already logged</h1>
@@ -94,7 +94,7 @@ function Reveal({
       <Link className="cta quiet" to="/">
         Back to today
       </Link>
-    </>
+    </div>
   );
 }
 
@@ -177,7 +177,8 @@ export function LogScreen() {
   }
 
   return (
-    <>
+    <div className="notebook-page">
+      <p className="kicker">Leave the forecast behind</p>
       <h1 className="spot-title">How was it?</h1>
       <p className="sub">
         Answer before you look at what we predicted — that is the whole point. We show you
@@ -333,6 +334,6 @@ export function LogScreen() {
           {sending ? "Saving…" : "Save"}
         </button>
       </form>
-    </>
+    </div>
   );
 }

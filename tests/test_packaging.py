@@ -41,6 +41,8 @@ def test_the_server_rendered_pages_travel_with_the_code():
     assert (TEMPLATE_DIR / "base.html").is_file()
     assert (STATIC_DIR / "app.css").is_file()
     assert (STATIC_DIR / "favicon.svg").is_file()
+    assert (STATIC_DIR / "chart.svg").is_file()
+    assert (STATIC_DIR / "paper.svg").is_file()
     # Every template the routes can still render. The app screens are React now; these
     # are the door and the two things that explain why there is no app to show.
     for name in ("enter", "off", "unbuilt"):
