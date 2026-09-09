@@ -261,6 +261,16 @@ How to change the product: edit the spot file or the score, add a fixture in `te
 - Timestamps are timezone-aware **UTC** everywhere inside; Lisbon is rendered at the edges. `unixtime` avoids the ambiguous local hour on the autumn DST fold
 - Wind: weather API, knots, land cell
 - Tide is a **phase** from `sea_level_height_msl`, not a Hidrográfico table
+- Six fields are **stored and not scored**: peak period, the combined sea (height and
+  period), and a secondary swell train. A forecast is the one thing the archive cannot
+  give back, so they are kept from today and left out of the score until the harness can
+  say whether they read the water better. Measured before adding them: peak period runs a
+  median 1.5 s above the mean period the score gates on, and the size gate disagrees with
+  the combined sea on 14% of hours — always in the same direction, vetoing as too small a
+  spot whose actual sea is in range
+- Peak period has a **shorter horizon than everything else**, about 69 h against 145 h.
+  A null there usually means "too far out", not "flat", and anything gating on it needs a
+  fallback to the mean period past day three
 - Nearby spots often share one wave-model cell. Ranking between two Ericeira reefs on the same hour comes from the spot file
 
 Free Open-Meteo is **non-commercial**, CC BY 4.0. Attribution is required. If this ever has ads or a paid plan, use their customer endpoint.

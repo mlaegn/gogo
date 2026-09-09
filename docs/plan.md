@@ -302,6 +302,34 @@ one user — start labelling with it immediately, and let the UI unblock everybo
 
   *Tests:* `test_archive.py`, headed by the negative one — an analysis row must never
   reach `forecast_current`, or `/api/windows` starts serving hours that already happened.
+
+  **Six features added later, stored and not scored.** Probing every variable both
+  endpoints offer turned up twelve the ingest was not taking. Six were kept, and the
+  filter was asymmetric recoverability: reanalysis can always be re-fetched, so anything
+  the score might want *about what happened* can wait, while a forecast exists only if
+  the worker wrote it down at the time. So air temperature, rain and sunrise/sunset were
+  left out — all recoverable or deterministic — and these were taken:
+
+  - `swell_peak_period_s`. The score gates on Open-Meteo's *mean* period; peak period is
+    what a surf forecast means by "11 seconds", and what `period_min_s` values of 6–10
+    look like they were written in. Median 1.5 s apart over 2688 spot-hours, and feeding
+    peak instead would lift a hard veto on 13.8% of them. Which is right is a Stage 3
+    question with a backtest attached, not a change to make now. Caveat found while
+    storing it: its horizon is ~69 h where everything else runs ~145 h, so a null past
+    day three means "not forecast", not "flat".
+  - `combined_height_m` / `combined_period_s`. The size gate reads the swell partition
+    alone and disagrees with the whole sea on 14% of hours — and every single
+    disagreement is the same one, swell under the spot's minimum while the real sea is in
+    range. A one-directional over-veto of small days is the censoring trap in the Traps
+    section, arriving through the size term rather than through behaviour.
+  - `swell2_height_m` / `swell2_from_deg` / `swell2_period_s`. Weak case, kept as
+    insurance: the secondary train is ≥60% of the primary a quarter of the time, but nine
+    times in ten it is within 30° of it — one swell split by the partitioner, not two.
+    Only 2.5% of hours hold a genuinely separate train. Those are S14's hours and they
+    are unrecoverable.
+
+  Four were probed and rejected as unusable: `wave_peak_period` and all three tertiary
+  swell fields return null for every hour at these cells.
 - [x] **S7 · Bulk import.** `gogo import sessions.csv` — `date,spot,start,end` required,
   everything else optional. Local times, per-row errors naming the column and the value,
   and `--dry-run` because a hand-written file gets checked before it lands.

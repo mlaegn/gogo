@@ -144,3 +144,31 @@ def test_a_day_with_no_hours_at_all_ranks_nothing():
     spots = load_spots()
     assert windows_for_day(spots, grid_day(DAY, spots, 7, 11), date(2026, 9, 6)) == []
     assert plan_day([]) is None
+
+
+def test_the_carried_features_survive_the_grid_to_forecast_step():
+    """`assemble` enumerates fields by hand, so a new one is dropped unless added here.
+
+    Storing a feature that the scoring boundary never sees is worse than not storing it:
+    the row looks complete in Postgres and the harness finds nothing to test.
+    """
+    from gogo.assemble import forecasts_from_grid
+    from helpers import grid_hour
+
+    series = forecasts_from_grid(
+        [
+            grid_hour(
+                swell_peak_period_s=13.4,
+                combined_height_m=1.9,
+                combined_period_s=7.2,
+                swell2_height_m=0.6,
+                swell2_from_deg=200,
+                swell2_period_s=8.1,
+            )
+        ]
+    )
+    assert len(series) == 1
+    h = series[0]
+    assert h.swell_peak_period_s == 13.4
+    assert (h.combined_height_m, h.combined_period_s) == (1.9, 7.2)
+    assert (h.swell2_height_m, h.swell2_from_deg, h.swell2_period_s) == (0.6, 200, 8.1)

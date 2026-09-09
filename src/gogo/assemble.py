@@ -38,6 +38,12 @@ def forecasts_from_grid(hours: list[GridHour]) -> list[HourForecast]:
                     sea_level_m=g.sea_level_m,
                     tide=phase[0] if phase else None,
                     tide_trend=phase[1] if phase else None,
+                    swell_peak_period_s=g.swell_peak_period_s,
+                    combined_height_m=g.combined_height_m,
+                    combined_period_s=g.combined_period_s,
+                    swell2_height_m=g.swell2_height_m,
+                    swell2_from_deg=g.swell2_from_deg,
+                    swell2_period_s=g.swell2_period_s,
                 )
             )
     return out

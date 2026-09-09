@@ -18,9 +18,32 @@ TIMEZONE = "Europe/Lisbon"
 TIMEFORMAT = "unixtime"
 SOURCE = "open-meteo"
 
+# The six after the first line are stored and not scored, deliberately. They were added
+# because a forecast is the one thing the archive cannot give back later: what the ocean
+# did is recoverable, what we believed it would do is not. Measured over 2688 spot-hours
+# of live forecast before adding them:
+#
+#   swell_wave_peak_period — a median 1.5 s above the mean period the score gates on,
+#     which is the number surfers actually quote. Feeding it instead would lift a hard
+#     veto on 13.8% of hours, so the gate may be reading a different quantity from the
+#     one its thresholds were written in. S12/S13 territory, and the harness decides.
+#     Note its horizon: measured at ~69 h, where every other variable here runs the
+#     full ~145 h. A score that gated on it would veto everything past day three, so
+#     any future use needs a fallback to the mean period at long lead. Storing it
+#     records where that boundary was on the day, which an as-of policy has to know.
+#   wave_height, wave_period — the combined sea. The size gate reads the swell partition
+#     alone and disagrees with the whole sea on 14% of hours, every single time in the
+#     same direction: swell under the spot's minimum while the real sea is in range. A
+#     one-directional over-veto on small days is exactly the censoring the plan warns of.
+#   secondary_swell_* — a genuinely separate second train only 2.5% of the time (the
+#     rest is one swell split by the partitioner). Kept as insurance for S14 because
+#     those hours are unrecoverable, not because the case is strong.
 MARINE_HOURLY = (
     "swell_wave_height,swell_wave_direction,swell_wave_period,"
-    "wind_wave_height,sea_level_height_msl,sea_surface_temperature"
+    "wind_wave_height,sea_level_height_msl,sea_surface_temperature,"
+    "swell_wave_peak_period,wave_height,wave_period,"
+    "secondary_swell_wave_height,secondary_swell_wave_direction,"
+    "secondary_swell_wave_period"
 )
 WEATHER_HOURLY = "wind_speed_10m,wind_direction_10m,wind_gusts_10m"
 
@@ -80,8 +103,13 @@ def merge_grid_hours(
             continue
         hs, swell_from, period, wind_kn, wind_from = gates
 
-        # Not gated on, so a null stays a harmless default rather than a dropped hour.
-        sst = (mh.get("sea_surface_temperature") or [None] * len(times))[i]
+        # Everything below is optional. A null stays a null rather than dropping the
+        # hour or becoming a zero: nothing gates on these, so an absent reading is
+        # simply an absent reading and the hour is still fully scorable without it.
+        def optional(series: str) -> float | None:
+            column = mh.get(series)
+            return column[i] if column else None
+
         out.append(
             GridHour(
                 requested_lat=spot.lat,
@@ -97,7 +125,13 @@ def merge_grid_hours(
                 wind_from_deg=wind_from,
                 wind_gusts_kn=wh["wind_gusts_10m"][wi] or 0.0,
                 sea_level_m=mh["sea_level_height_msl"][i],
-                sea_surface_temp_c=sst,
+                sea_surface_temp_c=optional("sea_surface_temperature"),
+                swell_peak_period_s=optional("swell_wave_peak_period"),
+                combined_height_m=optional("wave_height"),
+                combined_period_s=optional("wave_period"),
+                swell2_height_m=optional("secondary_swell_wave_height"),
+                swell2_from_deg=optional("secondary_swell_wave_direction"),
+                swell2_period_s=optional("secondary_swell_wave_period"),
                 source=source,
             )
         )

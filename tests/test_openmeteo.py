@@ -137,3 +137,76 @@ def test_a_real_zero_is_kept():
     assert hours[0].wind_from_deg == 0.0
     # Gusts are not gated on, so a null there stays a harmless default.
     assert hours[0].wind_gusts_kn == 0.0
+
+
+# --- stored, not scored -------------------------------------------------------------
+
+
+def test_the_extra_fields_are_captured():
+    """Six fields a forecast can give us and the archive never can, after the fact.
+
+    What the ocean did is recoverable from ERA5 whenever we ask. What we believed it
+    would do exists only if the worker wrote it down at the time, so these are stored
+    now and left out of the score until the harness can say whether they read the water
+    better than what it uses today.
+    """
+    src = _one_hour_response(
+        {"wind_speed_10m": [8.5], "wind_direction_10m": [70], "wind_gusts_10m": [14.0]},
+        marine_extra={
+            "swell_wave_peak_period": [13.4],
+            "wave_height": [1.9],
+            "wave_period": [7.2],
+            "secondary_swell_wave_height": [0.6],
+            "secondary_swell_wave_direction": [200],
+            "secondary_swell_wave_period": [8.1],
+        },
+    )
+    h = src.fetch([_SPOT], forecast_days=7)[0]
+
+    # Peak period is a separate number from the mean the score gates on, not a rename.
+    assert h.swell_period_s == 11.0
+    assert h.swell_peak_period_s == 13.4
+    assert (h.combined_height_m, h.combined_period_s) == (1.9, 7.2)
+    assert (h.swell2_height_m, h.swell2_from_deg, h.swell2_period_s) == (0.6, 200, 8.1)
+
+
+def test_a_missing_extra_field_does_not_drop_the_hour():
+    """Nothing gates on these, so an absent reading is absent, not fatal and not zero.
+
+    The mirror of the wind rule above, and the difference is the point: a null in a
+    field the score reads is a hole that must not be guessed at, while a null in one it
+    ignores is simply nothing to record.
+    """
+    src = _one_hour_response(
+        {"wind_speed_10m": [8.5], "wind_direction_10m": [70], "wind_gusts_10m": [14.0]},
+        marine_extra={"swell_wave_peak_period": [None], "wave_height": [None]},
+    )
+    hours = src.fetch([_SPOT], forecast_days=7)
+    assert len(hours) == 1
+    assert hours[0].swell_peak_period_s is None
+    assert hours[0].combined_height_m is None
+    assert hours[0].swell_height_m == 1.3
+
+
+def test_a_payload_written_before_these_fields_existed_still_loads():
+    """Why adding a field needs no migration.
+
+    The stored form is JSONB, so an hour written last week has no key for any of these.
+    It has to re-hydrate as None rather than fail, or every historical snapshot becomes
+    unreadable the moment the model grows.
+    """
+    from gogo.ingest.protocol import GridHour
+
+    old = {
+        "requested_lat": 38.988, "requested_lon": -9.419,
+        "grid_lat": 38.958, "grid_lon": -9.458,
+        "valid_at": "2026-08-29T07:00:00Z",
+        "swell_height_m": 1.3, "swell_from_deg": 290, "swell_period_s": 11.0,
+        "wind_wave_height_m": 0.2, "wind_speed_kn": 8.0, "wind_from_deg": 70,
+        "wind_gusts_kn": 12.0, "sea_level_m": 0.4, "source": "open-meteo",
+    }
+    hour = GridHour.model_validate(old)
+    assert hour.swell_height_m == 1.3
+    assert hour.swell_peak_period_s is None
+    assert hour.combined_height_m is None
+    assert hour.swell2_height_m is None

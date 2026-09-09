@@ -43,6 +43,14 @@ class Spot(BaseModel):
 
 
 class HourForecast(BaseModel):
+    """One hour at one spot, as the score sees it.
+
+    The optional block is carried but not read. It is here rather than only on
+    `GridHour` so that stored features reach the scoring boundary: a field that
+    `assemble` quietly drops is a field the harness cannot test, however faithfully it
+    was written to Postgres.
+    """
+
     valid_at: UtcDatetime
     swell_height_m: float
     swell_from_deg: float
@@ -54,6 +62,14 @@ class HourForecast(BaseModel):
     sea_level_m: float | None = None
     tide: TidePhase | None = None
     tide_trend: TideTrend | None = None
+
+    # Stored and carried, not scored. See GridHour for what each one is for.
+    swell_peak_period_s: float | None = None
+    combined_height_m: float | None = None
+    combined_period_s: float | None = None
+    swell2_height_m: float | None = None
+    swell2_from_deg: float | None = None
+    swell2_period_s: float | None = None
 
 
 class Reason(BaseModel):
