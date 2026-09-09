@@ -38,7 +38,7 @@ was, without showing you what we predicted first.
 | Mobile page (React + TS): windows + blind post-session card | done |
 | `gogo worker` — fetch loop with backoff + coverage check | done |
 | `gogo demo` — quarantined fixture labels for harness work | done |
-| A host to run the worker on, container image, backups | **not yet** |
+| A host to run the worker on, container image, backups | image + dump ready; you provision the VPS |
 | ~100 observations — the Stage 1 gate | **not yet** |
 | Accounts and invite-only groups, deploy | later |
 
@@ -75,7 +75,7 @@ The API does **not** call Open-Meteo. If current is empty, `/api/windows` return
 | Local engine | OrbStack | Runs the same `docker compose` file |
 | UI | Vite + React + TypeScript | Phone list + detail — the primary surface |
 | Alerts (later) | Web push + email | The evening go / no-go |
-| Host (later) | Fly.io or a VPS | Not a personal EKS cluster |
+| Host | Hetzner/OVH VPS (or Fly) | One box, two processes. Not EKS |
 
 One git repo. `api` and `worker` are processes, not extra repositories.
 
@@ -95,6 +95,37 @@ make ui                 # build the page (needs Node; once, then when the UI cha
 make web                # serve it, key "devkey"
 make phone              # same, reachable from your phone on this wifi
 make down               # stop Postgres; volume (data) stays
+```
+
+## Host (VPS)
+
+One image, two processes, one Postgres. The worker is what you turn on first — snapshot
+history is unrecoverable. The page is optional (`--profile web`). Not EKS.
+
+On a small Debian box (Hetzner CX22 is enough):
+
+1. Create the VPS, SSH in, install Docker (and git). Do not open port 5432.
+2. Clone the repo. Copy `.env.example` to `.env` and set **only** on the host:
+
+   ```bash
+   openssl rand -hex 32   # POSTGRES_PASSWORD
+   openssl rand -hex 32   # GOGO_WEB_SECRET, only if you bring the page up
+   ```
+
+   Hex on purpose: it is safe inside `DATABASE_URL`. Never commit `.env`.
+3. `make host` (or `docker compose -f docker-compose.prod.yml up -d --build`).
+   That is Postgres + the hourly fetch. `make host-web` also serves the page on
+   `127.0.0.1:8000` — put Caddy in front, or `ssh -L 8000:127.0.0.1:8000`.
+4. Cron the dump: `15 3 * * * /path/to/gogo/scripts/backup.sh`  
+   Files land in `backups/` (gitignored, mode 600), last 14 days kept.
+
+An unset `GOGO_WEB_SECRET` still means the page is **off**, not open. The worker does
+not need it.
+
+```bash
+make host               # Postgres + worker
+make host-web           # same, plus the page on 127.0.0.1:8000
+make backup             # pg_dump to backups/
 ```
 
 The page is where labels come from, so it is the way to use this. `make phone` prints a
@@ -200,6 +231,9 @@ src/gogo/clock.py            # UTC inside, Lisbon at the edges
 src/gogo/versioning.py       # spec_version for a spot
 src/gogo/migrate.py          # numbered SQL, schema_migrations
 src/gogo/migrations/         # applied by gogo migrate, never by Postgres
+Dockerfile                   # worker + api, secrets from env at run time
+docker-compose.prod.yml      # VPS stack; local `make up` still uses docker-compose.yml
+scripts/backup.sh            # pg_dump from inside Postgres, no password on argv
 uv.lock                      # pinned Python deps; make install / CI use this
 .github/workflows/test.yml   # pytest + compose Postgres; typecheck, build, type drift
 tests/                       # ranks, ingest mocks, store roundtrip

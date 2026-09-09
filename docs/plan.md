@@ -218,8 +218,16 @@ one user — start labelling with it immediately, and let the UI unblock everybo
   every cycle and logs at ERROR, because the Ribeira failure mode is *silence* — a
   ranking missing one spot looks entirely normal.
 
-  **Still open:** a container image for api and worker, one small host, and a nightly
-  `pg_dump`.
+  **Done: the image and the dump.** One Dockerfile, `gogo worker` by default and
+  uvicorn for the page; `docker-compose.prod.yml` runs Postgres unpublished plus the
+  worker; `--profile web` binds the API to `127.0.0.1:8000`. Secrets are interpolations
+  from a host `.env` that is gitignored; the build context excludes `.env`.
+  `scripts/backup.sh` dumps from inside the Postgres container (no password on argv)
+  into `backups/`. Both processes migrate on boot behind a Postgres advisory lock.
+
+  **Still open on your side:** a small VPS (Hetzner/OVH, or Fly) running that compose
+  file, with `.env` only on the box. The image, the two processes, and `scripts/backup.sh`
+  are in the repo.
 - [x] **S5e · Fixture labels, quarantined.** `gogo demo` writes plausible sessions from
   real reanalysis — real spots, real days, same-day pairs, three raters, a spread of
   ratings — so Stage 2 can be built before 100 real labels exist. An evaluation pipeline

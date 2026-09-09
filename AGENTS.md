@@ -29,6 +29,8 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **The worker's snapshot history is unrecoverable.** Each cycle stamps `forecast_snapshots.fetched_at`; the archive can say what the ocean did, but nothing can reconstruct what the forecast *said* beforehand. A day the worker did not run is a permanent hole in the only data that answers Q2. A failed fetch must never end the loop, and `spots_without_hours` runs every cycle because a ranking quietly missing a spot looks completely normal.
 - **Deps** come from `uv.lock`. `make install` is `uv sync`. After changing `pyproject.toml`, run `uv lock` and commit the lockfile. `numpy`/`scipy` belong to the `eval` group only — never to the API or worker runtime.
 
+- **Host is a VPS (or Fly), not EKS.** `docker-compose.prod.yml`: Postgres + worker, optional API. Secrets live in a host `.env` that is never copied into the image.
+
 ## Layout
 
 ```text
@@ -46,6 +48,9 @@ src/gogo/versioning.py   # spec_version; SCORE_VERSION lives in score.py
 src/gogo/migrate.py      # gogo migrate
 src/gogo/migrations/     # numbered SQL, applied by gogo migrate
 tests/fixtures/          # golden weekends
+Dockerfile               # one image: worker default, uvicorn for the page
+docker-compose.prod.yml  # VPS: unpublished Postgres + worker; --profile web for the page
+scripts/backup.sh        # nightly pg_dump into backups/
 ```
 
 ## How to work

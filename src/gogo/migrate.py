@@ -25,6 +25,7 @@ from pathlib import Path
 import psycopg
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+_MIGRATE_LOCK = 741_002
 
 _LEDGER = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -53,19 +54,28 @@ def migrate(
     baseline_through: str | None = None,
 ) -> list[tuple[str, str]]:
     """Apply pending migrations. Returns (filename, "applied" | "baselined") pairs."""
-    done = applied(conn)
-    acted: list[tuple[str, str]] = []
-    for path in migration_files(directory):
-        if path.name in done:
-            continue
-        mark_only = baseline_through is not None and path.name <= baseline_through
+    # Session lock so the worker and api can both migrate on boot without racing.
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_lock(%s)", (_MIGRATE_LOCK,))
+    conn.commit()
+    try:
+        done = applied(conn)
+        acted: list[tuple[str, str]] = []
+        for path in migration_files(directory):
+            if path.name in done:
+                continue
+            mark_only = baseline_through is not None and path.name <= baseline_through
+            with conn.cursor() as cur:
+                if not mark_only:
+                    cur.execute(path.read_text())
+                cur.execute(
+                    "INSERT INTO schema_migrations (filename, baselined) VALUES (%s, %s)",
+                    (path.name, mark_only),
+                )
+            conn.commit()
+            acted.append((path.name, "baselined" if mark_only else "applied"))
+        return acted
+    finally:
         with conn.cursor() as cur:
-            if not mark_only:
-                cur.execute(path.read_text())
-            cur.execute(
-                "INSERT INTO schema_migrations (filename, baselined) VALUES (%s, %s)",
-                (path.name, mark_only),
-            )
+            cur.execute("SELECT pg_advisory_unlock(%s)", (_MIGRATE_LOCK,))
         conn.commit()
-        acted.append((path.name, "baselined" if mark_only else "applied"))
-    return acted

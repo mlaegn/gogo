@@ -1,5 +1,5 @@
 .PHONY: install test weekend weekend-live weekend-db fetch backfill api web phone up down \
-	migrate ui ui-deps ui-dev ui-types openapi
+	migrate ui ui-deps ui-dev ui-types openapi host host-web backup
 
 # Python only, on purpose: the score, the worker and the tests must stay installable
 # without a Node toolchain. `make ui` is the frontend's entry point.
@@ -69,3 +69,13 @@ up:
 
 down:
 	docker compose down
+
+# VPS: Postgres + worker. Needs .env with POSTGRES_PASSWORD. See README.
+host:
+	docker compose -f docker-compose.prod.yml up -d --build
+
+host-web:
+	docker compose -f docker-compose.prod.yml --profile web up -d --build
+
+backup:
+	./scripts/backup.sh

@@ -10,6 +10,7 @@ build/
 .env
 .DS_Store
 .transcript*
+backups/
 web/node_modules/
 web/dist/
 # Vite output and the schema it is generated from: both derived, both rebuilt by
