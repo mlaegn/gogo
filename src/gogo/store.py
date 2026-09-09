@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date, datetime
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 
 import psycopg
 from psycopg.rows import dict_row
@@ -55,21 +56,58 @@ def seed_spots(conn: psycopg.Connection, spots: list[Spot]) -> None:
     conn.commit()
 
 
+@dataclass(frozen=True)
+class Written:
+    """What one fetch actually changed.
+
+    Two numbers because they answer different questions and usually disagree.
+    `current` is how many servable hours we now hold, which is what freshness means.
+    `appended` is how many of them were news — a belief we had not recorded before.
+    A cycle with a healthy `current` and an `appended` of zero is working perfectly and
+    storing nothing, which is the normal case between model runs.
+    """
+
+    current: int
+    appended: int
+
+
 def persist_hours(
     conn: psycopg.Connection,
     spots: list[Spot],
     hours: list[GridHour],
     fetched_at: datetime | None = None,
-) -> int:
-    """Append snapshots, upsert current by grid, remember each spot's cell."""
+) -> Written:
+    """Append changed snapshots, upsert current by grid, remember each spot's cell."""
     fetched_at = to_utc(fetched_at or datetime.now(UTC))
     if not hours:
-        return 0
+        return Written(current=0, appended=0)
 
+    # Append only when this is a different belief from the last one we recorded for the
+    # same cell-hour. Polling hourly a model that updates a few times a day writes the
+    # identical payload over and over: two cycles 23 minutes apart in September produced
+    # 1176 rows and 1176 unchanged payloads.
+    #
+    # This is lossless for the question snapshots exist to answer. An as-of query takes
+    # the newest row with `fetched_at <= T`, and skipping an unchanged repeat leaves that
+    # answer identical — the retained row's `fetched_at` simply becomes when the belief
+    # started rather than when it was last restated, which is the more useful stamp.
+    #
+    # `IS DISTINCT FROM` rather than `<>` so the first snapshot for an hour, where the
+    # subquery returns NULL, is an insert rather than a silent skip.
     snap = """
         INSERT INTO forecast_snapshots
             (grid_lat, grid_lon, valid_at, fetched_at, source, payload)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        SELECT %(lat)s, %(lon)s, %(valid_at)s, %(fetched_at)s, %(source)s, %(payload)s
+        WHERE (
+            SELECT s.payload
+            FROM forecast_snapshots s
+            WHERE s.grid_lat = %(lat)s
+              AND s.grid_lon = %(lon)s
+              AND s.valid_at = %(valid_at)s
+              AND NOT s.is_analysis
+            ORDER BY s.fetched_at DESC
+            LIMIT 1
+        ) IS DISTINCT FROM %(payload)s
     """
     current = """
         INSERT INTO forecast_current
@@ -90,7 +128,8 @@ def persist_hours(
     """
 
     by_request: dict[tuple[float, float], GridHour] = {}
-    written = 0
+    stored = 0
+    appended = 0
     with conn.cursor() as cur:
         seen_grid_hour: set[tuple[float, float, datetime]] = set()
         for hour in hours:
@@ -100,15 +139,19 @@ def persist_hours(
             if key not in seen_grid_hour:
                 cur.execute(
                     snap,
-                    (
-                        hour.grid_lat,
-                        hour.grid_lon,
-                        valid_at,
-                        fetched_at,
-                        hour.source,
-                        payload,
-                    ),
+                    {
+                        "lat": hour.grid_lat,
+                        "lon": hour.grid_lon,
+                        "valid_at": valid_at,
+                        "fetched_at": fetched_at,
+                        "source": hour.source,
+                        "payload": payload,
+                    },
                 )
+                appended += cur.rowcount
+                # Current is upserted every cycle whether the payload moved or not.
+                # Its `fetched_at` is what the page shows as "Updated 14:36" and what
+                # `gogo health` reads, so it has to mean "we checked", not "it changed".
                 cur.execute(
                     current,
                     (
@@ -121,7 +164,7 @@ def persist_hours(
                     ),
                 )
                 seen_grid_hour.add(key)
-                written += 1
+                stored += 1
             by_request[(hour.requested_lat, hour.requested_lon)] = hour
 
         for spot in spots:
@@ -130,7 +173,7 @@ def persist_hours(
                 continue
             cur.execute(cell, (spot.id, hour.grid_lat, hour.grid_lon, fetched_at))
     conn.commit()
-    return written
+    return Written(current=stored, appended=appended)
 
 
 def persist_analysis_hours(
@@ -408,18 +451,67 @@ def _grid_cells(conn: psycopg.Connection) -> dict[str, tuple[float, float]]:
         return {row["spot_id"]: (row["grid_lat"], row["grid_lon"]) for row in cur.fetchall()}
 
 
-def load_current_hours(conn: psycopg.Connection, spots: list[Spot]) -> list[GridHour]:
-    """Hours for each spot from its last grid, tagged with that spot's lat/lon."""
+#: How far back `load_current_hours` looks by default. The serving paths discard
+#: anything before `now` anyway, so this only has to cover the hour in progress plus
+#: clock skew. Its job is to stop an unbounded read growing with the table.
+CURRENT_LOOKBACK = timedelta(hours=2)
+
+#: How long an unservable hour is kept before `prune_current` removes it. Generous,
+#: because deleting is cheap and the only cost of keeping a row is size.
+CURRENT_RETENTION = timedelta(days=2)
+
+
+def load_current_hours(
+    conn: psycopg.Connection, spots: list[Spot], since: datetime | None = None
+) -> list[GridHour]:
+    """Servable hours for each spot from its last grid, tagged with that spot's lat/lon.
+
+    Bounded on purpose. `forecast_current` accumulates every hour ever fetched, so an
+    unbounded read grows without limit while the answer does not: an hour that has
+    already happened cannot be served, and every row here is re-validated into a
+    `GridHour` once per spot sharing its cell. A year of hourly fetching would make
+    this the slowest thing in the request.
+
+    `since` overrides the default bound. Backtests and round-trip tests pass an explicit
+    instant because they deal in historical hours on purpose.
+    """
+    cutoff = since if since is not None else datetime.now(UTC) - CURRENT_LOOKBACK
     cells = _grid_cells(conn)
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT grid_lat, grid_lon, valid_at, source, payload
             FROM forecast_current
-            """
+            WHERE valid_at >= %s
+            """,
+            (to_utc(cutoff),),
         )
         rows = cur.fetchall()
     return _hours_from_rows(spots, cells, rows)
+
+
+def prune_current(
+    conn: psycopg.Connection, retention: timedelta = CURRENT_RETENTION
+) -> int:
+    """Drop hours from the serving table that can no longer be served. Returns rows cut.
+
+    Keyed on `valid_at`, never on `fetched_at`, and that distinction is load-bearing: it
+    means this can only ever remove hours that are already in the past. A forecast that
+    is stale but still points at future hours is left completely alone, so a spell where
+    the worker cannot reach Open-Meteo degrades by going out of date rather than by
+    having its data deleted underneath it.
+
+    History is untouched. `forecast_snapshots` is the record; this table is a cache of
+    the newest belief about hours still ahead of us.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM forecast_current WHERE valid_at < %s",
+            (datetime.now(UTC) - retention,),
+        )
+        cut = cur.rowcount
+    conn.commit()
+    return cut
 
 
 def load_analysis_hours(

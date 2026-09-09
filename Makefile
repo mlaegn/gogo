@@ -1,5 +1,5 @@
 .PHONY: install test weekend weekend-live weekend-db fetch backfill api web phone up down \
-	migrate ui ui-deps ui-dev ui-types openapi host host-web backup
+	migrate ui ui-deps ui-dev ui-types openapi host host-web backup health
 
 # Python only, on purpose: the score, the worker and the tests must stay installable
 # without a Node toolchain. `make ui` is the frontend's entry point.
@@ -59,6 +59,10 @@ phone:
 	@echo "Phone: http://$$(ipconfig getifaddr en0):8000  key: $${GOGO_WEB_SECRET:-devkey}"
 	GOGO_WEB_SECRET=$${GOGO_WEB_SECRET:-devkey} \
 		.venv/bin/uvicorn gogo.api:app --host 0.0.0.0 --app-dir src
+
+# Is the forecast fresh and is every spot still ranked? Exit 1 if not.
+health:
+	.venv/bin/gogo health
 
 migrate:
 	.venv/bin/gogo migrate

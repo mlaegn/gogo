@@ -225,9 +225,41 @@ one user — start labelling with it immediately, and let the UI unblock everybo
   `scripts/backup.sh` dumps from inside the Postgres container (no password on argv)
   into `backups/`. Both processes migrate on boot behind a Postgres advisory lock.
 
+  **Done: bounded tables and a liveness answer.** Three things that only matter once
+  something runs unattended, folded in before provisioning rather than after, because
+  all three are awkward to change on a live box.
+
+  Snapshots now append only a *changed* payload. The measurement that forced it: two
+  cycles 23 minutes apart wrote 1176 rows carrying 1176 identical payloads, because
+  polling hourly a model that updates a few times a day mostly records the same belief
+  over and over. At an hourly cadence that was about 21 MB a day and 7.6 GB a year, on
+  a box with a 40 GB disk that also holds fourteen backups. It is lossless for the
+  question snapshots exist to answer — an as-of query takes the newest row with
+  `fetched_at <= T`, and dropping an unchanged repeat leaves that answer identical while
+  making the retained stamp mean when a belief *started*. `forecast_current` is still
+  upserted every cycle: its `fetched_at` means "we checked", not "it changed", and the
+  page and the healthcheck both read freshness from it.
+
+  `forecast_current` is bounded at both ends. `load_current_hours` no longer selects the
+  whole table — it held every hour ever fetched, re-validated once per spot sharing the
+  cell, so a year of running would have made it the slowest thing in the request — and
+  `prune_current` runs each cycle. It deletes on `valid_at` and never on `fetched_at`,
+  so an outage degrades into a stale forecast rather than a deleted one.
+
+  `gogo health` exits 1 when the served forecast has stopped moving or a spot has left
+  the ranking, and is the worker's container healthcheck. Both failures are invisible
+  otherwise, which is the whole reason this stage exists: the Ribeira incident below was
+  found by accident, four days late. Docker marks the container unhealthy and does not
+  restart it, which is correct — the loop is built to survive a bad hour at Open-Meteo,
+  not to exit on one.
+
+  `007` adds the index the payload lookup needs, which is the same
+  `(grid_lat, grid_lon, valid_at, fetched_at DESC)` index S8 asks for. Building it now
+  means the harness does not open by indexing a table with millions of rows in it.
+
   **Still open on your side:** a small VPS (Hetzner/OVH, or Fly) running that compose
-  file, with `.env` only on the box. The image, the two processes, and `scripts/backup.sh`
-  are in the repo.
+  file, with `.env` only on the box. The image, the two processes, `gogo health` and
+  `scripts/backup.sh` are in the repo.
 - [x] **S5e · Fixture labels, quarantined.** `gogo demo` writes plausible sessions from
   real reanalysis — real spots, real days, same-day pairs, three raters, a spread of
   ratings — so Stage 2 can be built before 100 real labels exist. An evaluation pipeline

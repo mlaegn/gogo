@@ -38,8 +38,10 @@ from gogo.store import (
     seed_spots,
 )
 from gogo.worker import (
+    MAX_AGE_S,
     backfill,
     fetch_once,
+    health,
     install_signal_handlers,
     run_forever,
     spots_without_hours,
@@ -213,9 +215,26 @@ def run_migrations(baseline_through: str | None) -> int:
 
 
 def fetch() -> int:
-    n = fetch_once()
-    print(f"Stored {n} current grid-hours.")
+    written = fetch_once()
+    print(
+        f"{written.current} servable grid-hours current, "
+        f"{written.appended} appended to history."
+    )
     return 0
+
+
+def run_health(args) -> int:
+    """Exit 0 when the box is doing its job, 1 when it is not.
+
+    Made a command rather than only a log line because the failure mode is silence:
+    a stopped worker and a spot that quietly left the ranking both look like nothing
+    happening. Usable as a container healthcheck, a cron line, or something to type
+    over SSH when you want an answer instead of a hunch.
+    """
+    report = health(max_age_s=args.max_age)
+    for line in report.lines(spot_count=len(load_spots())):
+        print(line)
+    return 0 if report.ok else 1
 
 
 def run_backfill(args: argparse.Namespace) -> int:
@@ -247,7 +266,10 @@ def run_worker(args) -> int:
     )
     if args.once:
         written = fetch_once()
-        print(f"Stored {written} current grid-hours.")
+        print(
+            f"{written.current} servable grid-hours current, "
+            f"{written.appended} appended to history."
+        )
         missing = spots_without_hours()
         if missing:
             print(f"WARNING  no hours for: {', '.join(missing)}")
@@ -403,6 +425,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     wk.add_argument("--once", action="store_true", help="One cycle, then exit.")
 
+    hp = sub.add_parser(
+        "health",
+        help="Is the forecast fresh and is every spot still ranked? Exit 1 if not.",
+    )
+    hp.add_argument(
+        "--max-age",
+        type=int,
+        default=MAX_AGE_S,
+        metavar="SECONDS",
+        help=f"How stale the served forecast may get (default {MAX_AGE_S}).",
+    )
+
     demo = sub.add_parser(
         "demo",
         help="Write FIXTURE labels for harness development. Never real data.",
@@ -431,6 +465,8 @@ def main(argv: list[str] | None = None) -> int:
         return import_observations(args)
     if args.cmd == "worker":
         return run_worker(args)
+    if args.cmd == "health":
+        return run_health(args)
     if args.cmd == "demo":
         return run_demo(args)
     return 1

@@ -198,8 +198,11 @@ def test_a_forecast_and_an_analysis_share_an_hour_without_colliding():
     conn = _connect_or_skip()
     with conn:
         seed_spots(conn, spots)
-        persist_hours(conn, spots, [grid_hour(valid_at=_SEP_0800)])
-        persist_hours(conn, spots, [grid_hour(valid_at=_SEP_0800)])
+        # Two *different* beliefs about the same hour: an unchanged repeat is no
+        # longer appended, and the property under test is many forecasts vs one
+        # analysis, not the number of times we restated the same forecast.
+        persist_hours(conn, spots, [grid_hour(valid_at=_SEP_0800, swell_height_m=1.3)])
+        persist_hours(conn, spots, [grid_hour(valid_at=_SEP_0800, swell_height_m=1.9)])
         persist_analysis_hours(
             conn, spots, [grid_hour(valid_at=_SEP_0800, source=SOURCE)]
         )

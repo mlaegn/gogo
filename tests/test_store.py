@@ -21,8 +21,10 @@ def test_persist_then_load_roundtrip():
     with conn:
         seed_spots(conn, spots)
         n = persist_hours(conn, spots, [written])
-        assert n == 1
-        loaded = load_current_hours(conn, spots)
+        assert n.current == 1
+        # An explicit `since`: this hour is deliberately historical, and the default
+        # bound only returns hours that could still be served.
+        loaded = load_current_hours(conn, spots, since=written.valid_at)
 
     # The table holds every hour ever fetched, so find the one this test wrote
     # rather than trusting the order rows come back in.
@@ -65,7 +67,7 @@ def test_dst_fold_keeps_two_distinct_hours():
 
     with conn:
         seed_spots(conn, spots)
-        assert persist_hours(conn, spots, [first, second]) == 2
+        assert persist_hours(conn, spots, [first, second]).current == 2
         with conn.cursor() as cur:
             cur.execute(
                 """

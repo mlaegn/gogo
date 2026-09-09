@@ -4,23 +4,30 @@ import logging
 import signal
 import threading
 from collections.abc import Callable, Iterator
-from datetime import date, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 
+from gogo.clock import now_utc, to_local
 from gogo.ingest.archive import ArchiveSource
 from gogo.ingest.openmeteo import OpenMeteoSource
+from gogo.ingest.protocol import GridHour
+from gogo.models import Spot
 from gogo.spots import load_spots
 from gogo.store import (
+    Written,
     connection,
+    current_as_of,
     load_current_hours,
     persist_analysis_hours,
     persist_hours,
+    prune_current,
     seed_spots,
 )
 
 log = logging.getLogger("gogo.worker")
 
 
-def fetch_once(forecast_days: int = 7) -> int:
+def fetch_once(forecast_days: int = 7) -> Written:
     spots = load_spots()
     src = OpenMeteoSource()
     try:
@@ -30,7 +37,17 @@ def fetch_once(forecast_days: int = 7) -> int:
 
     with connection() as conn:
         seed_spots(conn, spots)
-        return persist_hours(conn, spots, hours)
+        written = persist_hours(conn, spots, hours)
+        # Serving keeps only hours still ahead of us. Pruning here rather than on a
+        # separate schedule means the table is bounded by the same process that fills
+        # it, with no second thing to remember to run.
+        prune_current(conn)
+    return written
+
+
+def _missing(spots: list[Spot], hours: list[GridHour]) -> list[str]:
+    have = {(h.requested_lat, h.requested_lon) for h in hours}
+    return [s.id for s in spots if (s.lat, s.lon) not in have]
 
 
 def spots_without_hours() -> list[str]:
@@ -43,16 +60,77 @@ def spots_without_hours() -> list[str]:
     """
     spots = load_spots()
     with connection() as conn:
+        return _missing(spots, load_current_hours(conn, spots))
+
+
+#: How stale the served forecast may get before something is wrong. Two hours tolerates
+#: one missed hourly cycle and catches two, which is the point where a transient bad
+#: minute at Open-Meteo has become a worker that is not running.
+MAX_AGE_S = 7200
+
+
+@dataclass(frozen=True)
+class Health:
+    """Both ways this system fails quietly, in one answer.
+
+    A worker that has stopped and a ranking that is missing a spot produce no error and
+    no empty page. The first shows up only as a timestamp that stopped moving, and the
+    second only as one fewer row in a list nobody counts. Neither is visible from the
+    outside unless something asks, so this is the thing that asks.
+    """
+
+    as_of: datetime | None
+    age_s: float | None
+    max_age_s: int
+    missing: list[str]
+
+    @property
+    def stale(self) -> bool:
+        return self.age_s is None or self.age_s > self.max_age_s
+
+    @property
+    def ok(self) -> bool:
+        return not self.stale and not self.missing
+
+    def lines(self, spot_count: int) -> list[str]:
+        if self.as_of is None or self.age_s is None:
+            freshness = "forecast: nothing stored — no cycle has ever completed"
+        else:
+            freshness = (
+                f"forecast: {'STALE' if self.stale else 'fresh'}, "
+                f"{self.age_s / 60:.0f} min old "
+                f"(as of {to_local(self.as_of):%Y-%m-%d %H:%M} Lisbon, "
+                f"limit {self.max_age_s // 60} min)"
+            )
+        coverage = (
+            f"spots: NO HOURS for {', '.join(self.missing)}"
+            if self.missing
+            else f"spots: all {spot_count} have servable hours"
+        )
+        return [freshness, coverage]
+
+
+def health(max_age_s: int = MAX_AGE_S) -> Health:
+    """Is the forecast fresh, and is every spot still in the ranking?
+
+    Read-only and cheap, so it is safe as a container healthcheck, a cron line, or
+    something to type over SSH when you want to know whether the box is doing its job.
+    """
+    spots = load_spots()
+    with connection() as conn:
+        as_of = current_as_of(conn)
         hours = load_current_hours(conn, spots)
-    have = {(h.requested_lat, h.requested_lon) for h in hours}
-    return [s.id for s in spots if (s.lat, s.lon) not in have]
+    age = (now_utc() - as_of).total_seconds() if as_of else None
+    return Health(
+        as_of=as_of, age_s=age, max_age_s=max_age_s, missing=_missing(spots, hours)
+    )
 
 
 def run_forever(
     interval_s: int = 3600,
     forecast_days: int = 7,
     stop: threading.Event | None = None,
-    fetch: Callable[[int], int] = fetch_once,
+    fetch: Callable[[int], Written] = fetch_once,
     check: Callable[[], list[str]] = spots_without_hours,
 ) -> int:
     """Fetch on a loop until asked to stop. Returns the number of successful cycles.
@@ -82,7 +160,9 @@ def run_forever(
             if missing:
                 # Loud, because the failure mode is silence.
                 log.error("spots with no hours after fetch: %s", ", ".join(missing))
-            log.info("cycle %d: %d grid-hours stored", cycles, written)
+            # Both numbers, because "stored a lot" and "learned anything" differ. An
+            # appended of 0 between model runs is the loop working, not the loop idle.
+            log.info("cycle %d: %s", cycles, written)
         except Exception:
             # Exponential up to the normal interval, then just keep trying at that rate.
             backoff = min(interval_s, 60 if backoff == 0 else backoff * 2)

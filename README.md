@@ -37,6 +37,8 @@ was, without showing you what we predicted first.
 | Any day, not just Saturday — `/api/windows?day=` | done |
 | Mobile page (React + TS): windows + blind post-session card | done |
 | `gogo worker` — fetch loop with backoff + coverage check | done |
+| `gogo health` — freshness + coverage, exit 1 when the box is not working | done |
+| Bounded tables — changed-payload snapshots, pruned `forecast_current` | done |
 | `gogo demo` — quarantined fixture labels for harness work | done |
 | A host to run the worker on, container image, backups | image + dump ready; you provision the VPS |
 | ~100 observations — the Stage 1 gate | **not yet** |
@@ -53,6 +55,7 @@ lands without a backtest number.
 ```text
 gogo fetch          → Open-Meteo → snapshots + current (worker writes)
 gogo worker         → the same on a loop; snapshot history is unrecoverable
+gogo health         → is the forecast fresh and is every spot still ranked?
 gogo backfill       → ERA5 archive → snapshots only, is_analysis
 gogo weekend --db   → read current → group Saturday into ranges → print
 GET /api/windows    → same as --db, JSON (cookie-gated)
@@ -127,6 +130,17 @@ make host               # Postgres + worker
 make host-web           # same, plus the page on 127.0.0.1:8000
 make backup             # pg_dump to backups/
 ```
+
+Is it working? Both failure modes here are silent — a stopped worker still leaves a page
+that renders, and a spot that drops out of the ranking is just one fewer row.
+
+```bash
+docker compose -f docker-compose.prod.yml exec worker gogo health
+```
+
+That is also the worker's container healthcheck, so `docker compose ps` says `unhealthy`
+when the forecast stops moving. Docker will not restart it on that, deliberately: the
+loop is built to ride out a bad hour at Open-Meteo rather than exit on one.
 
 The page is where labels come from, so it is the way to use this. `make phone` prints a
 LAN address and a key — open it on your phone and add it to the home screen. An unset

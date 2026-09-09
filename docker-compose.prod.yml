@@ -40,6 +40,22 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    # A stopped worker looks exactly like a running one: no error, no empty page, just
+    # a timestamp that quietly stops moving. This is what makes that visible in
+    # `docker compose ps`. Note what it does not do — Docker marks a container
+    # unhealthy, it does not restart it, and it should not: the loop is designed to
+    # survive a bad hour at Open-Meteo rather than exit on it. Treat "unhealthy" as the
+    # alarm and `docker compose exec worker gogo health` as the detail.
+    #
+    # start_period covers a cold database, where nothing is stored until the first
+    # cycle finishes. `run_forever` fetches before it waits, so that is a minute, not
+    # an interval.
+    healthcheck:
+      test: ["CMD", "gogo", "health"]
+      interval: 300s
+      timeout: 30s
+      retries: 2
+      start_period: 300s
     logging: *log
 
   api:
