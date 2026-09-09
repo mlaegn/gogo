@@ -267,3 +267,32 @@ def test_a_spot_detail_records_no_impression(client):
     # /api/windows, by contrast, is a recommendation and must be recorded.
     client.get("/api/windows")
     assert impressions() > before
+
+
+def test_the_day_list_records_no_impression(client):
+    """/api/days answers "which days do you hold", not "here is where to go".
+
+    Recording one here would log a full ranking for a day nobody looked at, and
+    since `anchored` is set from any overlapping impression, a day-list request
+    would go on to mark later sessions as having been recommended to. The
+    unanchored control slice only means something if that cannot happen.
+    """
+    conn = connect()
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE window_impressions RESTART IDENTITY")
+        conn.commit()
+
+    assert client.get("/api/days").status_code == 200
+
+    with connect() as after:
+        with after.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM window_impressions")
+            assert cur.fetchone()["n"] == 0, "the day list wrote an impression"
+
+    # And the endpoint that *is* a recommendation still records one.
+    assert client.get("/api/windows").status_code == 200
+    with connect() as after:
+        with after.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM window_impressions")
+            assert cur.fetchone()["n"] > 0

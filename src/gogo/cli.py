@@ -77,16 +77,21 @@ def weekend(fixture: Path | None, from_db: bool) -> int:
     if fixture:
         hours = _load_fixture(fixture)
     elif from_db:
+        # One `now` for picking the day and for scoring it. They have to be the same
+        # bound: a window offered at 15:00 must not begin at 06:00, and this path
+        # writes an impression, so a stale window here becomes a recommendation on
+        # record that was never actually offerable.
+        now = now_utc()
         with connection() as conn:
             hours = load_current_hours(conn, spots)
             if not hours:
                 print("No stored forecasts. Run: gogo fetch")
                 return 1
-            day = plan_day(hours, not_before=now_utc())
+            day = plan_day(hours, not_before=now)
             if day is None:
                 print("No upcoming hours to score. Run: gogo fetch")
                 return 1
-            ranked = windows_for_day(spots, hours, day)
+            ranked = windows_for_day(spots, hours, day, not_before=now)
             as_of = current_as_of(conn)
             if as_of is not None:
                 record_impressions(conn, ranked, spots, as_of, surface="cli")

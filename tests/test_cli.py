@@ -69,3 +69,41 @@ def test_import_stores_once_then_reports_the_rest_as_already_present(capsys):
 def test_import_of_a_missing_file_fails_cleanly(capsys):
     assert main(["import", "tests/fixtures/nope.csv"]) == 1
     assert "No such file" in capsys.readouterr().out
+
+
+def test_weekend_db_never_offers_or_records_an_hour_that_has_passed(monkeypatch, capsys):
+    """`--db` must apply the same `not_before` bound the serving path does.
+
+    The printed line is the smaller half. This path writes a `window_impressions`
+    row, and an impression for a window that had already ended is a recommendation
+    on record that was never offerable — which a label logged later would then
+    anchor itself against.
+    """
+    from datetime import timedelta
+
+    from helpers import grid_day
+
+    from gogo.clock import from_local_input, now_utc, to_local
+    from gogo.spots import load_spots
+    from gogo.store import persist_hours, seed_spots
+
+    conn = _connect_or_skip()
+    spots = load_spots()
+    day = to_local(now_utc()).date() + timedelta(days=1)
+    with conn:
+        seed_spots(conn, spots)
+        persist_hours(conn, spots, grid_day(day, spots, 6, 20))
+
+    # Stand at 15:00 local on that day, with a full 06:00-20:00 of hours stored.
+    afternoon = from_local_input(day, "15:00")
+    monkeypatch.setattr("gogo.cli.now_utc", lambda: afternoon)
+
+    assert main(["weekend", "--db"]) == 0
+    assert "06:00" not in capsys.readouterr().out
+
+    with _connect_or_skip() as check:
+        with check.cursor() as cur:
+            cur.execute("SELECT min(window_start) AS first FROM window_impressions")
+            first = cur.fetchone()["first"]
+    assert first is not None, "the --db path is supposed to record what it showed"
+    assert first >= afternoon

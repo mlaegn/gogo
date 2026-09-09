@@ -74,3 +74,66 @@ def test_fetch_merges_marine_and_weather(monkeypatch):
     assert h.wind_speed_kn == 8.5
     assert h.valid_at == _SATURDAY_0800_LISBON
     assert h.valid_at.tzinfo is not None
+
+
+def _one_hour_response(wind: dict, marine_extra: dict | None = None):
+    marine = {
+        "latitude": 38.958,
+        "longitude": -9.458,
+        "hourly": {
+            "time": [_UNIXTIME],
+            "swell_wave_height": [1.3],
+            "swell_wave_direction": [290],
+            "swell_wave_period": [11.0],
+            "wind_wave_height": [0.2],
+            "sea_level_height_msl": [0.4],
+            "sea_surface_temperature": [19.2],
+        },
+    }
+    marine["hourly"].update(marine_extra or {})
+    weather = {
+        "latitude": 39.0,
+        "longitude": -9.375,
+        "hourly": {"time": [_UNIXTIME], **wind},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = marine if "marine" in str(request.url) else weather
+        return httpx.Response(200, json=payload)
+
+    return OpenMeteoSource(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def test_a_missing_wind_reading_drops_the_hour_rather_than_calling_it_calm():
+    """0 kn is not the same claim as "we do not know".
+
+    A null coerced to zero lands on the spot's offshore bearing and scores the wind
+    term full marks, so a hole in the feed would come back as the glassiest hour of
+    the day. Dropping the hour ends the run instead, which is what a gap already means.
+    """
+    src = _one_hour_response(
+        {"wind_speed_10m": [None], "wind_direction_10m": [70], "wind_gusts_10m": [14.0]}
+    )
+    assert src.fetch([_SPOT], forecast_days=7) == []
+
+
+def test_a_missing_swell_period_drops_the_hour_rather_than_vetoing_the_spot():
+    """The mirror image: a coerced 0 s period is short enough to veto every spot."""
+    src = _one_hour_response(
+        {"wind_speed_10m": [8.5], "wind_direction_10m": [70], "wind_gusts_10m": [14.0]},
+        marine_extra={"swell_wave_period": [None]},
+    )
+    assert src.fetch([_SPOT], forecast_days=7) == []
+
+
+def test_a_real_zero_is_kept():
+    """Only None is a hole. Calm wind out of due north is a reading, not a gap."""
+    src = _one_hour_response(
+        {"wind_speed_10m": [0.0], "wind_direction_10m": [0], "wind_gusts_10m": [None]}
+    )
+    hours = src.fetch([_SPOT], forecast_days=7)
+    assert len(hours) == 1
+    assert hours[0].wind_speed_kn == 0.0
+    assert hours[0].wind_from_deg == 0.0
+    # Gusts are not gated on, so a null there stays a harmless default.
+    assert hours[0].wind_gusts_kn == 0.0

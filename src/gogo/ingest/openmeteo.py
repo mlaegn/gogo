@@ -59,12 +59,28 @@ def merge_grid_hours(
 
     out: list[GridHour] = []
     for i, valid_at in enumerate(times):
-        hs = mh["swell_wave_height"][i]
-        if hs is None:
-            continue
         wi = wind_at.get(valid_at)
         if wi is None:
             continue
+
+        # Every field the score gates on. A null here is a hole in the feed, not a
+        # zero, and the two are not interchangeable: 0 kn aligned with a spot's
+        # offshore bearing scores full marks, so coercing a missing wind reading
+        # would turn a gap into the most flattering hour of the day, while a
+        # coerced 0 s period vetoes the spot outright. Dropping the hour instead
+        # ends the run, which is already what a gap in the data means.
+        gates = (
+            mh["swell_wave_height"][i],
+            mh["swell_wave_direction"][i],
+            mh["swell_wave_period"][i],
+            wh["wind_speed_10m"][wi],
+            wh["wind_direction_10m"][wi],
+        )
+        if any(value is None for value in gates):
+            continue
+        hs, swell_from, period, wind_kn, wind_from = gates
+
+        # Not gated on, so a null stays a harmless default rather than a dropped hour.
         sst = (mh.get("sea_surface_temperature") or [None] * len(times))[i]
         out.append(
             GridHour(
@@ -74,11 +90,11 @@ def merge_grid_hours(
                 grid_lon=marine["longitude"],
                 valid_at=valid_at,
                 swell_height_m=hs,
-                swell_from_deg=mh["swell_wave_direction"][i] or 0.0,
-                swell_period_s=mh["swell_wave_period"][i] or 0.0,
+                swell_from_deg=swell_from,
+                swell_period_s=period,
                 wind_wave_height_m=mh["wind_wave_height"][i] or 0.0,
-                wind_speed_kn=wh["wind_speed_10m"][wi] or 0.0,
-                wind_from_deg=wh["wind_direction_10m"][wi] or 0.0,
+                wind_speed_kn=wind_kn,
+                wind_from_deg=wind_from,
                 wind_gusts_kn=wh["wind_gusts_10m"][wi] or 0.0,
                 sea_level_m=mh["sea_level_height_msl"][i],
                 sea_surface_temp_c=sst,

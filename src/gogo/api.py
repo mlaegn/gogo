@@ -95,7 +95,12 @@ def _windows_out(served: Served) -> WindowsOut:
 
 @api.get("/days")
 def days() -> DaysOut:
-    served = _served(None, surface="api")
+    # No impression: this answers "which days do you hold", not "here is where to go".
+    # Recording one would log a ranking for a day nobody looked at, and — because
+    # `anchored` is set from any overlapping impression — would let a day-list request
+    # mark later sessions as having been recommended to. That empties the unanchored
+    # control slice of its meaning.
+    served = _served(None, surface=None)
     return DaysOut(
         timezone=LISBON.key,
         default=served.day,
