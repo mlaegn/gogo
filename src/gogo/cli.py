@@ -25,10 +25,12 @@ from gogo.models import Fault, Observation, WindowScore
 from gogo.score import SCORE_VERSION
 from gogo.spots import by_id, load_spots
 from gogo.store import (
+    HANDLE_ENV,
     analysis_days,
     connection,
     count_observations,
     current_as_of,
+    default_handle,
     ensure_user,
     impression_for,
     load_analysis_hours,
@@ -38,10 +40,12 @@ from gogo.store import (
     seed_spots,
 )
 from gogo.worker import (
+    HEARTBEAT_ENV,
     MAX_AGE_S,
     backfill,
     fetch_once,
     health,
+    heartbeat,
     install_signal_handlers,
     run_forever,
     spots_without_hours,
@@ -234,6 +238,10 @@ def run_health(args) -> int:
     report = health(max_age_s=args.max_age)
     for line in report.lines(spot_count=len(load_spots())):
         print(line)
+    # Only on success, so silence is the alarm. Pinging regardless would make the
+    # switch report that the box is alive, which was never the question.
+    if report.ok and heartbeat(args.heartbeat):
+        print("heartbeat sent")
     return 0 if report.ok else 1
 
 
@@ -398,14 +406,22 @@ def main(argv: list[str] | None = None) -> int:
         help="You had not seen our score when you judged it (control group).",
     )
     log.add_argument("--note", default=None)
-    log.add_argument("--user", default="me", help="Handle; real accounts come with S5b.")
+    log.add_argument(
+        "--user",
+        default=default_handle(),
+        help=f"Handle; the page writes as this too. Override with ${HANDLE_ENV}.",
+    )
 
     imp = sub.add_parser(
         "import",
         help="Bulk-load remembered sessions from a CSV (date,spot,start,end,...).",
     )
     imp.add_argument("file", help="CSV path. Times are local, one row per spot per day.")
-    imp.add_argument("--user", default="me", help="Handle; real accounts come with S5b.")
+    imp.add_argument(
+        "--user",
+        default=default_handle(),
+        help=f"Handle; the page writes as this too. Override with ${HANDLE_ENV}.",
+    )
     imp.add_argument(
         "--dry-run",
         action="store_true",
@@ -435,6 +451,13 @@ def main(argv: list[str] | None = None) -> int:
         default=MAX_AGE_S,
         metavar="SECONDS",
         help=f"How stale the served forecast may get (default {MAX_AGE_S}).",
+    )
+    hp.add_argument(
+        "--heartbeat",
+        default=None,
+        metavar="URL",
+        help=f"Ping this only when healthy, so silence is the alarm. "
+        f"Defaults to ${HEARTBEAT_ENV}.",
     )
 
     demo = sub.add_parser(

@@ -120,7 +120,14 @@ On a small Debian box (Hetzner CX22 is enough):
    That is Postgres + the hourly fetch. `make host-web` also serves the page on
    `127.0.0.1:8000` — put Caddy in front, or `ssh -L 8000:127.0.0.1:8000`.
 4. Cron the dump: `15 3 * * * /path/to/gogo/scripts/backup.sh`  
-   Files land in `backups/` (gitignored, mode 600), last 14 days kept.
+   Files land in `backups/` (gitignored, mode 600), last 14 days kept. The dump is
+   checked for completeness before it is kept, and `GOGO_BACKUP_DEST` (an rsync
+   destination) sends a copy somewhere that is not this disk. Restore one by hand once:
+   an untested restore is a belief, not a backup.
+5. Optional but cheap: set `GOGO_HEARTBEAT_URL` to a cron-monitor URL. The worker's
+   healthcheck already runs `gogo health` every five minutes, and it pings that URL
+   **only when healthy** — so you are alerted by the pings stopping, which is the one
+   signal that still works when the container, the disk or the box is gone.
 
 An unset `GOGO_WEB_SECRET` still means the page is **off**, not open. The worker does
 not need it.
@@ -142,6 +149,10 @@ That is also the worker's container healthcheck, so `docker compose ps` says `un
 when the forecast stops moving. Docker will not restart it on that, deliberately: the
 loop is built to ride out a bad hour at Open-Meteo rather than exit on one.
 
+Nothing on the box can tell you it has died, so the alarm has to be something outside it
+noticing silence. With `GOGO_HEARTBEAT_URL` set, that same healthcheck pings the URL only
+on a healthy result, and the monitor alerts when the pings stop.
+
 The page is where labels come from, so it is the way to use this. `make phone` prints a
 LAN address and a key — open it on your phone and add it to the home screen. An unset
 `GOGO_WEB_SECRET` means the page is **off** rather than open, so set a real one anywhere
@@ -162,6 +173,11 @@ Recording what you saw, which is what the score gets calibrated against:
 gogo log ribeira --start 07:15 --end 09:00 --residual -1 --fault tide:-1 --crowd busy
 gogo log coxos --start 08:00 --end 08:30 --kind checked --residual -2
 ```
+
+Labels from the page and from `gogo log` belong to the same person: both read
+`GOGO_HANDLE`, defaulting to `max`. That matters more than it looks, because an
+observation is unique on (user, spot, start) — two handles would not collide, they would
+quietly store one session as two labels.
 
 `--residual` is how it compared to what we predicted, −2 much worse to +2 much better.
 `--fault` names the gate we got wrong. `--kind checked` is looked-at-and-did-not-surf —

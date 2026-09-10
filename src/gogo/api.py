@@ -26,13 +26,14 @@ from gogo.serving import NoForecast, Served, UnknownDay, serve, serve_spot
 from gogo.spots import load_spots
 from gogo.store import (
     connection,
+    default_handle,
     ensure_user,
     impression_for,
     record_observation,
     seed_spots,
 )
 from gogo.versioning import spec_version
-from gogo.web import STATIC_DIR, handle, require_key
+from gogo.web import STATIC_DIR, require_key
 from gogo.web import router as web_router
 
 app = FastAPI(title="gogo", version=__version__)
@@ -197,7 +198,7 @@ def create_observation(body: ObservationIn) -> ObservationOut:
                 status_code=422, detail=exc.errors()[0].get("msg", "That does not add up.")
             ) from exc
 
-        user_id = ensure_user(conn, handle())
+        user_id = ensure_user(conn, default_handle())
         observation_id = record_observation(conn, user_id, observation)
 
     return ObservationOut(

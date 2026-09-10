@@ -36,6 +36,9 @@ services:
     image: gogo:local
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-gogo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gogo}
+      # Optional. The healthcheck below pings this only when healthy, so silence is the
+      # alarm — which is the only kind that survives the box dying.
+      GOGO_HEARTBEAT_URL: ${GOGO_HEARTBEAT_URL:-}
     depends_on:
       postgres:
         condition: service_healthy

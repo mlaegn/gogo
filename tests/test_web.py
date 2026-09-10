@@ -296,3 +296,36 @@ def test_the_day_list_records_no_impression(client):
         with after.cursor() as cur:
             cur.execute("SELECT count(*) AS n FROM window_impressions")
             assert cur.fetchone()["n"] > 0
+
+
+def test_the_page_and_the_cli_write_as_the_same_person(client, forecast):
+    """One session, logged on the phone and again in the terminal, is one label.
+
+    An observation is unique on (user_id, spot_id, started_at). Two handles for the same
+    person therefore do not collide, they duplicate — and 004, which exists to stop
+    exactly that, cannot see it, because as far as the database is concerned two
+    different people surfed Ribeira at 08:00. Duplicated labels silently reweight
+    whatever is measured against them and nothing looks wrong afterwards.
+    """
+    from gogo.cli import main
+
+    body = {
+        "spot_id": "ribeira",
+        "day": forecast.isoformat(),
+        "start": "08:00",
+        "end": "09:00",
+        "rating": 4,
+    }
+    assert client.post("/api/observations", json=body).json()["duplicate"] is False
+
+    # The same session, typed into the terminal afterwards.
+    assert main(
+        ["log", "ribeira", "--date", forecast.isoformat(), "--start", "08:00", "--end", "09:00"]
+    ) == 0
+
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM observations WHERE spot_id = 'ribeira'")
+            assert cur.fetchone()["n"] == 1, "the two surfaces wrote two labels"
+            cur.execute("SELECT count(*) AS n FROM users")
+            assert cur.fetchone()["n"] == 1, "the two surfaces created two people"

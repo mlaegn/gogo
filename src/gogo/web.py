@@ -39,12 +39,9 @@ router = APIRouter()
 
 COOKIE = "gogo_key"
 SECRET_ENV = "GOGO_WEB_SECRET"
-# One account until S5b brings real ones. Everything logged here belongs to it.
-HANDLE_ENV = "GOGO_WEB_HANDLE"
-
-
-def handle() -> str:
-    return os.environ.get(HANDLE_ENV, "max")
+# Who a label belongs to lives in `store.default_handle`, not here. It used to be a
+# second definition with a second default, which meant the page wrote as one person and
+# `gogo log` as another, and the same session recorded on both became two labels.
 
 
 def _secret() -> str | None:

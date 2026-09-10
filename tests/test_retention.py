@@ -253,3 +253,98 @@ def test_health_passes_when_the_forecast_is_fresh_and_every_spot_is_covered():
     assert report.ok
     assert not report.stale
     assert report.missing == []
+
+
+# --- heartbeat: silence is the alarm -------------------------------------------------
+
+
+class _Ok:
+    def raise_for_status(self):
+        return None
+
+
+class _Dead:
+    def raise_for_status(self):
+        raise RuntimeError("monitoring service is down")
+
+
+def _capture(monkeypatch, response):
+    sent: list[str] = []
+
+    def fake_get(url, timeout=None):
+        sent.append(url)
+        return response
+
+    monkeypatch.setattr("gogo.worker.httpx.get", fake_get)
+    return sent
+
+
+def test_no_heartbeat_is_sent_when_the_forecast_has_gone_stale(monkeypatch):
+    """The whole point. A switch that gets pinged regardless reports that the box is
+    powered on, which was never the question."""
+    from gogo.cli import main
+
+    _conn().close()  # empty database: nothing fetched, so health is not ok
+    sent = _capture(monkeypatch, _Ok())
+    assert main(["health", "--heartbeat", "https://example.invalid/ping"]) == 1
+    assert sent == []
+
+
+def test_a_heartbeat_is_sent_when_healthy(monkeypatch):
+    from gogo.cli import main
+
+    spots = load_spots()
+    conn = _conn()
+    with conn:
+        seed_spots(conn, spots)
+        persist_hours(
+            conn,
+            spots,
+            [
+                grid_hour(
+                    requested_lat=s.lat, requested_lon=s.lon,
+                    grid_lat=s.lat, grid_lon=s.lon,
+                    valid_at=now_utc() + timedelta(hours=5),
+                )
+                for s in spots
+            ],
+        )
+
+    sent = _capture(monkeypatch, _Ok())
+    assert main(["health", "--heartbeat", "https://example.invalid/ping"]) == 0
+    assert sent == ["https://example.invalid/ping"]
+
+
+def test_an_unreachable_monitor_does_not_make_the_box_unhealthy(monkeypatch):
+    """A dead monitoring service is not a wrong surf forecast. If this returned 1 the
+    container healthcheck would report unhealthy for something entirely outside it."""
+    spots = load_spots()
+    conn = _conn()
+    with conn:
+        seed_spots(conn, spots)
+        persist_hours(
+            conn,
+            spots,
+            [
+                grid_hour(
+                    requested_lat=s.lat, requested_lon=s.lon,
+                    grid_lat=s.lat, grid_lon=s.lon,
+                    valid_at=now_utc() + timedelta(hours=5),
+                )
+                for s in spots
+            ],
+        )
+
+    from gogo.cli import main
+
+    _capture(monkeypatch, _Dead())
+    assert main(["health", "--heartbeat", "https://example.invalid/ping"]) == 0
+
+
+def test_nothing_is_sent_when_no_url_is_configured(monkeypatch):
+    from gogo.worker import heartbeat
+
+    monkeypatch.delenv("GOGO_HEARTBEAT_URL", raising=False)
+    sent = _capture(monkeypatch, _Ok())
+    assert heartbeat() is False
+    assert sent == []

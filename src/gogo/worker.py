@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+
+import httpx
 
 from gogo.clock import now_utc, to_local
 from gogo.ingest.archive import ArchiveSource
@@ -108,6 +111,34 @@ class Health:
             else f"spots: all {spot_count} have servable hours"
         )
         return [freshness, coverage]
+
+
+HEARTBEAT_ENV = "GOGO_HEARTBEAT_URL"
+
+
+def heartbeat(url: str | None = None) -> bool:
+    """Tell a dead-man's switch we are fine. Only when we actually are.
+
+    Hung off `gogo health` rather than off the fetch loop, and that is the whole design.
+    The container healthcheck already runs `gogo health` every few minutes, so making it
+    the sender means the alarm covers every way this can stop, not only the ones the
+    worker survives long enough to notice. A wedged loop, a killed container, a full
+    disk, a dead box: all of them stop the pings identically, and not one of them could
+    have sent a message about itself.
+
+    Never changes the exit code. A monitoring service being unreachable is not the surf
+    forecast being wrong, and a healthcheck that fails for that reason would restart the
+    wrong thing.
+    """
+    url = url or os.environ.get(HEARTBEAT_ENV) or None
+    if not url:
+        return False
+    try:
+        httpx.get(url, timeout=10).raise_for_status()
+        return True
+    except Exception:
+        log.warning("heartbeat to %s failed; health itself is unaffected", url)
+        return False
 
 
 def health(max_age_s: int = MAX_AGE_S) -> Health:

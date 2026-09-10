@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -276,6 +277,24 @@ def analysis_days(conn: psycopg.Connection) -> set[date]:
             (LISBON.key,),
         )
         return {row["day"] for row in cur.fetchall()}
+
+
+# One account until S5b brings real ones, and — more to the point — one *name* for it on
+# every surface. An observation is unique on (user_id, spot_id, started_at), so two
+# handles for the same person do not collide, they silently duplicate: a session logged
+# on the phone and again in the terminal becomes two labels instead of one. That is the
+# exact failure 004 exists to prevent, and 004 cannot see it, because as far as the
+# database is concerned two different people surfed.
+#
+# Cheap to get right while the observations table is empty. A manual reconciliation
+# afterwards, with nothing in the row to say which surface it came from.
+HANDLE_ENV = "GOGO_HANDLE"
+DEFAULT_HANDLE = "max"
+
+
+def default_handle() -> str:
+    """Who is writing labels, until accounts exist. Same answer for the page and the CLI."""
+    return os.environ.get(HANDLE_ENV) or DEFAULT_HANDLE
 
 
 def ensure_user(conn: psycopg.Connection, handle: str, skill: str = "advanced") -> int:
