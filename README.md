@@ -17,7 +17,9 @@ was, without showing you what we predicted first.
 
 ## Status
 
-**Phase 2 — store, fetch, windows.** Forecasts persist and are served as ranges. Labels are the bottleneck.
+**Phase 2 — store, fetch, windows.** Forecasts persist and are served as ranges.
+The worker has run unattended on a small VPS since 10 September 2026, so snapshot
+history now accumulates on its own. Labels are the bottleneck, and the only one.
 
 | Piece | State |
 |---|---|
@@ -40,7 +42,8 @@ was, without showing you what we predicted first.
 | `gogo health` — freshness + coverage, exit 1 when the box is not working | done |
 | Bounded tables — changed-payload snapshots, pruned `forecast_current` | done |
 | `gogo demo` — quarantined fixture labels for harness work | done |
-| A host to run the worker on, container image, backups | image + dump ready; you provision the VPS |
+| A host to run the worker on, container image, backups | done — worker on a VPS since 2026-09-10, nightly dump, restore tested |
+| The page on that host | not deployed; needs a domain and TLS, `make phone` covers the laptop |
 | ~100 observations — the Stage 1 gate | **not yet** |
 | Accounts and invite-only groups, deploy | later |
 
@@ -105,29 +108,61 @@ make down               # stop Postgres; volume (data) stays
 One image, two processes, one Postgres. The worker is what you turn on first — snapshot
 history is unrecoverable. The page is optional (`--profile web`). Not EKS.
 
-On a small Debian box (Hetzner CX22 is enough):
+Run through once on a Hetzner CX23 (2 vCPU, 4 GB, 40 GB) in Helsinki, Debian 13, about
+€9/month with Hetzner's own disk backups on. Every step below is what actually worked,
+not what ought to. Total time from empty console to a healthy worker was under an hour.
 
-1. Create the VPS, SSH in, install Docker (and git). Do not open port 5432.
-2. Clone the repo. Copy `.env.example` to `.env` and set **only** on the host:
+1. **Create the box.** Add your SSH public key during creation, so no root password is
+   ever mailed to you. Attach a cloud firewall allowing inbound TCP 22 and ICMP only —
+   at the provider, not `ufw`, so it holds even if the host is misconfigured. Keep the
+   ICMP rule: it carries path-MTU messages, and dropping it turns some connections into
+   hangs rather than clean failures. Never open 5432.
+
+2. **Base packages and swap.** `git make ca-certificates curl unattended-upgrades`, then
+   2 GB of swap. 4 GB of RAM builds the image without it, but swap is a cheap hedge
+   against a build that dies two-thirds through, and it survives reboots via `fstab`.
+
+3. **Docker from Docker's apt repository**, with the signing key, rather than piping a
+   script into a shell. Mind the distribution in the repo URL: `.../linux/debian` on
+   Debian and `.../linux/ubuntu` on Ubuntu. Using the wrong one produces a repo line with
+   a codename that does not exist there and `apt-get update` fails.
+
+4. **Clone, then generate the password on the box.** Do not copy `.env.example` here —
+   its `DATABASE_URL` is for a laptop and is noise on a server. The only variable
+   required is `POSTGRES_PASSWORD`:
 
    ```bash
-   openssl rand -hex 32   # POSTGRES_PASSWORD
-   openssl rand -hex 32   # GOGO_WEB_SECRET, only if you bring the page up
+   printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 32)" > .env && chmod 600 .env
    ```
 
-   Hex on purpose: it is safe inside `DATABASE_URL`. Never commit `.env`.
-3. `make host` (or `docker compose -f docker-compose.prod.yml up -d --build`).
-   That is Postgres + the hourly fetch. `make host-web` also serves the page on
-   `127.0.0.1:8000` — put Caddy in front, or `ssh -L 8000:127.0.0.1:8000`.
-4. Cron the dump: `15 3 * * * /path/to/gogo/scripts/backup.sh`  
-   Files land in `backups/` (gitignored, mode 600), last 14 days kept. The dump is
-   checked for completeness before it is kept, and `GOGO_BACKUP_DEST` (an rsync
-   destination) sends a copy somewhere that is not this disk. Restore one by hand once:
-   an untested restore is a belief, not a backup.
-5. Optional but cheap: set `GOGO_HEARTBEAT_URL` to a cron-monitor URL. The worker's
-   healthcheck already runs `gogo health` every five minutes, and it pings that URL
-   **only when healthy** — so you are alerted by the pings stopping, which is the one
-   signal that still works when the container, the disk or the box is gone.
+   Hex on purpose: it is safe inside `DATABASE_URL`. Generating it on the box means it
+   never travels. Never commit `.env`. (`GOGO_WEB_SECRET` too, but only if you ever
+   bring the page up — the worker does not need it.)
+
+5. **`make host`.** Builds the frontend and the Python image, then starts Postgres and
+   the worker. Both migrate on boot behind an advisory lock. The worker fetches
+   immediately rather than waiting an hour, so there is a forecast stored within a
+   minute.
+
+6. **Backfill the archive once**, since the box starts with no reanalysis. A year takes
+   a couple of minutes and writes only analysis rows, so serving is untouched:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml exec worker gogo backfill --from 2025-09-01 --to 2026-09-03
+   ```
+
+7. **Cron the dump** — `15 3 * * * /opt/gogo/scripts/backup.sh` — and note the server
+   clock is UTC. Files land in `backups/` (gitignored, mode 600), last 14 days kept. The
+   dump is verified for completeness before it is kept, and `GOGO_BACKUP_DEST` (an rsync
+   destination) sends a copy somewhere that is not this disk.
+
+8. **Restore one, once.** This is the only claim in the whole setup that no code can
+   check for you, and it takes a minute: `createdb restore_test`, pipe the newest dump
+   into `psql`, count the rows, `dropdb`. If the counts come back, you have a backup. If
+   you skip it, you have a belief.
+
+9. **Optional, five minutes:** set `GOGO_HEARTBEAT_URL` to a cron-monitor URL. See
+   *Knowing it is alive* below for why this is the piece that cannot live on the box.
 
 An unset `GOGO_WEB_SECRET` still means the page is **off**, not open. The worker does
 not need it.
@@ -138,20 +173,34 @@ make host-web           # same, plus the page on 127.0.0.1:8000
 make backup             # pg_dump to backups/
 ```
 
-Is it working? Both failure modes here are silent — a stopped worker still leaves a page
-that renders, and a spot that drops out of the ranking is just one fewer row.
+### Knowing it is alive
+
+Both failure modes here are silent. A stopped worker still leaves a page that renders,
+and a spot that quietly drops out of the ranking is just one fewer row in a list nobody
+counts. So the question needs three separate pieces, and only two of them can live on
+the box.
+
+**The check** — `gogo health`. Exits 0 when the served forecast is fresh and all 16
+spots have hours, 1 otherwise. Read-only, so it is safe anywhere.
 
 ```bash
 docker compose -f docker-compose.prod.yml exec worker gogo health
 ```
 
-That is also the worker's container healthcheck, so `docker compose ps` says `unhealthy`
-when the forecast stops moving. Docker will not restart it on that, deliberately: the
-loop is built to ride out a bad hour at Open-Meteo rather than exit on one.
+**The watcher** — the worker's container healthcheck runs that command every five
+minutes, so `docker compose ps` shows `unhealthy` when the forecast stops moving. Docker
+deliberately does not restart on it: the loop is built to ride out a bad hour at
+Open-Meteo rather than exit on one, and restarting would not fix an upstream outage.
 
-Nothing on the box can tell you it has died, so the alarm has to be something outside it
-noticing silence. With `GOGO_HEARTBEAT_URL` set, that same healthcheck pings the URL only
-on a healthy result, and the monitor alerts when the pings stop.
+**The notifier** — this one cannot be here, and that is the whole point. A dead box
+cannot report that it is dead. Any alerting that runs on the server goes silent in
+exactly the cases that matter most: container gone, disk full, kernel panic, provider
+outage. So `gogo health` pings `GOGO_HEARTBEAT_URL` **only on success**, and something
+outside the box alerts when the pings stop. Absence is the signal, because absence is
+the one thing a dead machine can still produce.
+
+Nothing about that is vendor-specific. The check is ours and tested; the outsourced part
+is one outbound GET to a URL, and any cron-monitor service takes one.
 
 The page is where labels come from, so it is the way to use this. `make phone` prints a
 LAN address and a key — open it on your phone and add it to the home screen. An unset
