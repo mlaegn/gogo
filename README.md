@@ -164,6 +164,21 @@ not what ought to. Total time from empty console to a healthy worker was under a
 9. **Optional, five minutes:** set `GOGO_HEARTBEAT_URL` to a cron-monitor URL. See
    *Knowing it is alive* below for why this is the piece that cannot live on the box.
 
+### Getting the page onto a phone
+
+`make host-web` binds the API to `127.0.0.1:8000`, never to the public interface. Two
+ways to reach it, and the second is the one to start with:
+
+- **A domain plus Caddy or nginx** in front. The real answer once more than one person
+  uses it.
+- **A private network — `tailscale serve 8000`.** No domain, no certificate, no open
+  port, and it is the right size while the page is behind a single shared secret and
+  has exactly one user. Move to a domain when that stops being true.
+
+Either way the API must run with `--proxy-headers`, which the production compose already
+passes. Without it the app sees plain http behind the terminator and the login cookie —
+which *is* the shared secret — loses its `Secure` flag.
+
 An unset `GOGO_WEB_SECRET` still means the page is **off**, not open. The worker does
 not need it.
 

@@ -65,7 +65,28 @@ services:
     profiles: ["web"]
     build: .
     image: gogo:local
-    command: ["uvicorn", "gogo.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    # --proxy-headers is load-bearing, not tidiness. The login cookie carries the
+    # shared secret and gets its `Secure` flag from the request scheme; behind any TLS
+    # terminator (Caddy, nginx, `tailscale serve`) the app sees plain http, so without
+    # this the secret would be eligible to travel unencrypted. The flag makes uvicorn
+    # read X-Forwarded-Proto instead.
+    #
+    # `--forwarded-allow-ips=*` trusts that header from anywhere, which is safe only
+    # because of the port binding below: 8000 is published on 127.0.0.1, and the cloud
+    # firewall allows nothing but SSH, so the only thing that can reach uvicorn is
+    # already on this box.
+    command:
+      [
+        "uvicorn",
+        "gogo.api:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--proxy-headers",
+        "--forwarded-allow-ips",
+        "*",
+      ]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-gogo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gogo}
       GOGO_WEB_SECRET: ${GOGO_WEB_SECRET:-}

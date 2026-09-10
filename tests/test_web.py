@@ -329,3 +329,25 @@ def test_the_page_and_the_cli_write_as_the_same_person(client, forecast):
             assert cur.fetchone()["n"] == 1, "the two surfaces wrote two labels"
             cur.execute("SELECT count(*) AS n FROM users")
             assert cur.fetchone()["n"] == 1, "the two surfaces created two people"
+
+
+def test_the_cookie_is_secure_when_the_request_arrived_over_https(monkeypatch):
+    """The cookie *is* the secret, so it must not be eligible to travel in clear.
+
+    The app decides this from the request scheme. Behind a TLS terminator that scheme
+    only reads https if uvicorn was started with `--proxy-headers`, which is why the
+    production compose passes it and why this test exists to pin the app's half.
+    """
+    monkeypatch.setenv(SECRET_ENV, KEY)
+    with TestClient(app, base_url="https://testserver") as https:
+        response = https.post("/enter", data={"key": KEY}, follow_redirects=False)
+    assert "secure" in response.headers["set-cookie"].lower()
+
+
+def test_the_cookie_is_not_secure_over_plain_http(locked):
+    """The other half, deliberately: `make phone` serves plain http over the wifi, and
+    a Secure cookie would never be sent back, so the page could not be logged into."""
+    response = locked.post("/enter", data={"key": KEY}, follow_redirects=False)
+    cookie = response.headers["set-cookie"].lower()
+    assert "secure" not in cookie
+    assert "httponly" in cookie
