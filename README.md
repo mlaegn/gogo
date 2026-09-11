@@ -43,7 +43,7 @@ history now accumulates on its own. Labels are the bottleneck, and the only one.
 | Bounded tables — changed-payload snapshots, pruned `forecast_current` | done |
 | `gogo demo` — quarantined fixture labels for harness work | done |
 | A host to run the worker on, container image, backups | done — worker on a VPS since 2026-09-10, nightly dump, restore tested |
-| The page on that host | not deployed; needs a domain and TLS, `make phone` covers the laptop |
+| The page on that host | running, private — over an SSH tunnel; public needs a domain |
 | ~100 observations — the Stage 1 gate | **not yet** |
 | Accounts and invite-only groups, deploy | later |
 
@@ -164,35 +164,43 @@ not what ought to. Total time from empty console to a healthy worker was under a
 9. **Optional, five minutes:** set `GOGO_HEARTBEAT_URL` to a cron-monitor URL. See
    *Knowing it is alive* below for why this is the piece that cannot live on the box.
 
-### Getting the page onto a phone
+### Reaching the page
 
-`make host-web` never publishes the API itself — it binds `127.0.0.1:8000` and Caddy
-reaches it over the compose network. Only 80 and 443 are open on the host.
+The API is never published. It binds `127.0.0.1:8000` on the host, and how you get to it
+depends on who "you" are — which is two different problems with two different answers.
 
-**A domain is the answer, and the reason is the product rather than the plumbing.**
-Labels come from locals, and a local will not install a VPN client before they can tell
-you how the waves were. Anything that adds a step before the card costs you labels, and
-labels are the scarce thing. A domain costs about ten euros a year.
+**For yourself, today: an SSH tunnel.** No DNS, no certificate, no account, nothing
+installed.
+
+```bash
+make host-web                       # on the box: Postgres, worker, API
+make tunnel HOST=root@your.box      # on your laptop, leave it running
+```
+
+Then `http://localhost:8088`. SSH is doing the encryption, so the cookie never crosses a
+network in clear. The reason to prefer this over running the page locally against a
+laptop database is not convenience: what you log lands beside the snapshot history it
+will have to be joined against, instead of starting a second dataset that has to be
+merged later.
+
+`tailscale serve 8000` does the same job with a real certificate if you want it on your
+own phone. Also fine, also personal.
+
+**For everyone else, later: a domain.** Locals will not install a VPN client before they
+can tell you how the waves were, and anything added before the card costs you labels.
+About ten euros a year.
 
 1. Point an `A` record at the box. Caddy proves control over the name on port 80, so it
    has to resolve before the first start.
-2. Open TCP 80 and 443 in the provider firewall. Still nothing else.
-3. Set `GOGO_DOMAIN` and `GOGO_WEB_SECRET` in `.env`, then `make host-web`. Caddy gets
-   the certificate on first request and renews it on its own.
+2. Open TCP 80 and 443 in the provider firewall. Still nothing else, and never 5432.
+3. Set `GOGO_DOMAIN` and `GOGO_WEB_SECRET` in `.env`, then `make host-public`. Caddy
+   fetches the certificate on the first request and renews it on its own.
 
-`caddy_data` is a named volume on purpose: it holds the certificate and the ACME
-account, and a throwaway one would re-issue on every restart until Let's Encrypt starts
-refusing, which it does after five certificates for a domain in a week.
-
-**During development, none of the above is needed.** `make tunnel HOST=root@your.box`
-forwards the box's API to `localhost:8088` over SSH. No DNS, no certificate, no account,
-nothing installed — and crucially, what you log lands in the box's database beside the
-forecast history rather than starting a second dataset on your laptop. Splitting labels
-from the snapshots they have to be joined against is the one mistake here that is
-annoying to undo.
-
-**For yourself on a phone, `tailscale serve 8000`** is a reasonable stopgap — no domain, no
-open port — but it is a personal convenience, not a way to ship the page to anyone else.
+Caddy sits in its own `public` profile rather than in `web`, so the private route never
+starts it — otherwise it would come up with no domain and issue a certificate for
+"localhost". `caddy_data` is a named volume because it holds that certificate and the
+ACME account, and a throwaway one would re-issue on every restart until Let's Encrypt
+refuses, which it does after five for a domain in a week.
 
 Either route, the API must run with `--proxy-headers`, which the production compose
 passes. Without it the app sees plain http behind the terminator and the login cookie,
@@ -202,9 +210,11 @@ An unset `GOGO_WEB_SECRET` still means the page is **off**, not open. The worker
 not need it.
 
 ```bash
-make host               # Postgres + worker
-make host-web           # same, plus the page on 127.0.0.1:8000
-make backup             # pg_dump to backups/
+make host                            # Postgres + worker
+make host-web                        # same, plus the page on 127.0.0.1:8000
+make host-public                     # same, plus Caddy and a certificate
+make tunnel HOST=root@your.box       # from your laptop: the page on localhost:8088
+make backup                          # pg_dump to backups/
 ```
 
 ### Knowing it is alive

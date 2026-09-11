@@ -1,12 +1,14 @@
-# Host stack: Postgres + worker always; the page is `--profile web`.
+# Host stack. Postgres and the worker always; the page and its TLS are profiles,
+# because the page has two audiences that need different things.
+#
+#   make host           postgres + worker
+#   make host-web       + api, bound to 127.0.0.1 — reach it with `make tunnel`
+#   make host-public    + caddy, a real certificate, needs GOGO_DOMAIN
+#
 # Copy `.env.example` to `.env` on the box and fill POSTGRES_PASSWORD
 # (`openssl rand -hex 32`). Never commit `.env`.
 #
-#   docker compose -f docker-compose.prod.yml up -d --build
-#   docker compose -f docker-compose.prod.yml --profile web up -d
-#
-# Postgres is not published. The API binds 127.0.0.1:8000 — put Caddy/nginx in
-# front, or SSH-tunnel. Local `make up` still uses docker-compose.yml.
+# Postgres is never published. Local `make up` still uses docker-compose.yml.
 
 name: gogo
 
