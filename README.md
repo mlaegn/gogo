@@ -166,18 +166,37 @@ not what ought to. Total time from empty console to a healthy worker was under a
 
 ### Getting the page onto a phone
 
-`make host-web` binds the API to `127.0.0.1:8000`, never to the public interface. Two
-ways to reach it, and the second is the one to start with:
+`make host-web` never publishes the API itself — it binds `127.0.0.1:8000` and Caddy
+reaches it over the compose network. Only 80 and 443 are open on the host.
 
-- **A domain plus Caddy or nginx** in front. The real answer once more than one person
-  uses it.
-- **A private network — `tailscale serve 8000`.** No domain, no certificate, no open
-  port, and it is the right size while the page is behind a single shared secret and
-  has exactly one user. Move to a domain when that stops being true.
+**A domain is the answer, and the reason is the product rather than the plumbing.**
+Labels come from locals, and a local will not install a VPN client before they can tell
+you how the waves were. Anything that adds a step before the card costs you labels, and
+labels are the scarce thing. A domain costs about ten euros a year.
 
-Either way the API must run with `--proxy-headers`, which the production compose already
-passes. Without it the app sees plain http behind the terminator and the login cookie —
-which *is* the shared secret — loses its `Secure` flag.
+1. Point an `A` record at the box. Caddy proves control over the name on port 80, so it
+   has to resolve before the first start.
+2. Open TCP 80 and 443 in the provider firewall. Still nothing else.
+3. Set `GOGO_DOMAIN` and `GOGO_WEB_SECRET` in `.env`, then `make host-web`. Caddy gets
+   the certificate on first request and renews it on its own.
+
+`caddy_data` is a named volume on purpose: it holds the certificate and the ACME
+account, and a throwaway one would re-issue on every restart until Let's Encrypt starts
+refusing, which it does after five certificates for a domain in a week.
+
+**During development, none of the above is needed.** `make tunnel HOST=root@your.box`
+forwards the box's API to `localhost:8088` over SSH. No DNS, no certificate, no account,
+nothing installed — and crucially, what you log lands in the box's database beside the
+forecast history rather than starting a second dataset on your laptop. Splitting labels
+from the snapshots they have to be joined against is the one mistake here that is
+annoying to undo.
+
+**For yourself on a phone, `tailscale serve 8000`** is a reasonable stopgap — no domain, no
+open port — but it is a personal convenience, not a way to ship the page to anyone else.
+
+Either route, the API must run with `--proxy-headers`, which the production compose
+passes. Without it the app sees plain http behind the terminator and the login cookie,
+which *is* the shared secret, loses its `Secure` flag.
 
 An unset `GOGO_WEB_SECRET` still means the page is **off**, not open. The worker does
 not need it.

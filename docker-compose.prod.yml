@@ -110,5 +110,38 @@ services:
     restart: unless-stopped
     logging: *log
 
+  # TLS terminator. Its own profile, not `web`, because the page has two audiences and
+  # only one of them needs a certificate: `make host-web` serves you over an SSH tunnel
+  # or a tailnet, `make host-public` serves everyone else over a real domain. Bundling
+  # Caddy into `web` would start it with no domain set and have it sit there issuing a
+  # certificate for "localhost", which is pure noise.
+  #
+  # GOGO_DOMAIN still has a harmless default rather than `:?`. Compose interpolates the
+  # whole file before it filters by profile, so a required variable here would break
+  # plain `make host` for anyone running only the worker.
+  caddy:
+    profiles: ["public"]
+    image: caddy:2-alpine
+    environment:
+      GOGO_DOMAIN: ${GOGO_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # caddy_data holds the certificates and the ACME account. It has to persist:
+      # a throwaway volume means re-issuing on every restart, and Let's Encrypt allows
+      # five certificates per domain per week before it starts refusing.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *log
+
 volumes:
   gogo_pg:
+  caddy_data:
+  caddy_config:

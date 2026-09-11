@@ -1,0 +1,18 @@
+# TLS in front of the page, so a local can open a link and nothing else.
+#
+# Caddy obtains and renews the certificate itself, which is the whole reason it is here
+# rather than nginx. It also sets `X-Forwarded-Proto`, and that is load-bearing: the
+# login cookie *is* the shared secret, and it only gets its `Secure` flag when uvicorn
+# is told the request arrived over https. See the `--proxy-headers` note on the api
+# service in docker-compose.prod.yml — the two exist for one reason between them.
+#
+# The API is never published to the internet. Caddy reaches it over the compose network
+# on `api:8000`, and the only ports open on the host are 80 and 443.
+
+{$GOGO_DOMAIN} {
+	encode zstd gzip
+
+	# Port 80 stays reachable because the ACME http-01 challenge needs it; Caddy
+	# redirects everything else on it to https on its own.
+	reverse_proxy api:8000
+}
