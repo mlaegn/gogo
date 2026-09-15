@@ -47,6 +47,7 @@ history now accumulates on its own. Labels are the bottleneck, and the only one.
 | The page on that host | running, private — over an SSH tunnel; public needs a domain |
 | `features.py` — as-of features, the floor under the harness (S8) | done |
 | `eval/dataset.py` — labels joined to features, grouped into swell events (S9) | done |
+| `eval/metrics.py` + `baselines.py` — ranking accuracy vs five baselines (S10) | done |
 | ~100 observations — the Stage 1 gate | **not yet** |
 | Accounts and invite-only groups, deploy | later |
 

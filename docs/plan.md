@@ -426,11 +426,35 @@ features.
   label imported from last March can only ever answer "was the score right about the
   water". Only a label collected from now on can answer "would we have sent you to the
   right place", which is the question the product is actually judged on.
-- [ ] **S10 · Metrics and baselines.** `eval/metrics.py`: pairwise ranking accuracy
-  (headline), reliability curve, Brier on *would return*, veto precision/recall, NDCG@3
-  where ≥3 spots are labelled the same day. `eval/baselines.py`: random,
-  always-Carcavelos, biggest-swell-wins, height×period with onshore veto, incumbent score.
-  Bootstrap CIs resampled over **events**, not rows.
+- [x] **S10 · Metrics and baselines.** All five metrics and all five baselines, with
+  percentile intervals resampled over events. Every metric returns `None` beside its
+  sample size rather than a number when there is too little data, because 0.0 reads as a
+  terrible score and 0.5 as a coin flip and both would be lies.
+
+  **No numpy, deliberately.** At a few hundred labels the arithmetic is trivial and the
+  `eval` group the plan reserves would be a dependency carried for nothing. It arrives
+  with S18, which genuinely needs a sampler.
+
+  **The reliability curve became a calibration table**, honestly renamed. The score is a
+  0-100 opinion and the label is a 1-5 rating, so there is no probability to be reliable
+  about. What the bands can show is whether they are *ordered* — if 60-80 is rated no
+  better than 40-60 the number is decoration however good the ranking is. Brier keeps a
+  proper scoring rule only on *would return*, the one genuinely binary label, and even
+  there the score/100 mapping is a stated assumption rather than a measurement until S18.
+
+  **Validated on the fixture labels, where the answer is known by construction.** The
+  incumbent scores 0.785 [0.593, 0.932] against random at 0.492, biggest-swell at 0.500
+  and always-Carcavelos at 0.523. The incumbent must win — the ratings were generated
+  from it — so the informative parts are that the baselines sit on 0.5, which says the
+  metric is not broken, and that the incumbent is 0.785 rather than 1.0, which is
+  `demo`'s injected size preference showing up as the disagreement it was designed to be.
+
+  **One finding worth carrying into Stage 1: ties eat more than half the pairs.** 145
+  same-day spot pairs yielded only 65 comparable ones, because equal ratings carry no
+  ordering information and are dropped rather than counted as agreement. On a 1-5 scale
+  that is going to be normal. So the headline metric's effective sample size is roughly
+  *half* the pair count, and the ~100 observation gate buys less statistical power than
+  it sounds like. Worth remembering when deciding whether to log a `checked` row.
 - [ ] **S11 · `gogo backtest`.** `--score-version --spec-mode --as-of-policy --from --to`
   → `eval_runs` + `eval_predictions` + a diffable markdown report. Deterministic, offline.
   Spec modes: `as_of` reproduces history, `pinned:<version>` applies a proposal to old data.
