@@ -400,9 +400,32 @@ features.
   `windows_for_day` consumes it untouched — a backtest scores past days through the
   product's own path rather than a second copy of it. *Tests:* `test_features.py`,
   headed by the one named here.
-- [ ] **S9 · Dataset.** `eval/dataset.py` joins observations to features and predictions
-  and assigns **event ids** — hours inside one swell are not independent samples. v1 rule:
-  new event after a gap > 36 h. Documented as v1, revisited with more data.
+- [x] **S9 · Dataset.** `gogo/eval/dataset.py` joins every label to the features
+  available at a policy's as-of, scores the hours the person was actually in the water,
+  and carries what we had on screen at the time where an impression exists. Event ids are
+  assigned coast-wide rather than per spot, because a swell is: two people at two spots
+  on one morning are one event, which is what stops a bootstrap resampling a same-day
+  pair as two independent draws. v1 gap rule of 36 h, recorded as a guess.
+
+  Samples carry the features as well as the scores. The demo module states the harness's
+  own pass condition as "residuals track swell height", and that is uncheckable from a
+  verdict alone.
+
+  **The instrument was validated before being pointed anywhere.** Against the 120 fixture
+  labels, mean predicted score by rating runs 5.8 / 44.8 / 72.2 / 70.6 / 64.0 while mean
+  swell runs 1.30 / 1.22 / 1.33 / 1.39 / 2.40 m. The score's opinion rises to rating 3 and
+  then falls as swell climbs — which is exactly `demo`'s declared +14 points per metre
+  over 1.2 m, visible as disagreement. Clean agreement here would have meant a broken
+  harness.
+
+  **And it surfaced the constraint that matters most.** Under `best_known` all 120 labels
+  join. Under `lead_24h`, 118 of 120 drop for want of stored features. That is not a bug:
+  Q2 may only see forecasts, reanalysis is excluded by design, and a forecast for a past
+  day exists only if the worker was running before that day. So **Q1 can use the whole
+  backfilled year, while Q2 begins on 10 September 2026 and grows one day at a time.** A
+  label imported from last March can only ever answer "was the score right about the
+  water". Only a label collected from now on can answer "would we have sent you to the
+  right place", which is the question the product is actually judged on.
 - [ ] **S10 · Metrics and baselines.** `eval/metrics.py`: pairwise ranking accuracy
   (headline), reliability curve, Brier on *would return*, veto precision/recall, NDCG@3
   where ≥3 spots are labelled the same day. `eval/baselines.py`: random,
