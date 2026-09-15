@@ -376,10 +376,30 @@ features.
 
 ## Stage 2 — the harness
 
-- [ ] **S8 · As-of features.** `features.py`: build features for (spot, hour range) using
-  only snapshots with `fetched_at <= as_of`. Policies: `best_known`, `lead_24h`,
-  `evening_before`. Index extended to `(grid_lat, grid_lon, valid_at, fetched_at DESC)`.
-  *Test:* a later fetch for the same hour is invisible at an earlier as-of.
+- [x] **S8 · As-of features.** `features.py` returns one local day of hours for a set of
+  spots as they looked at a policy's as-of. `best_known` is unbounded and may use
+  reanalysis (Q1); `evening_before` is 18:00 local the previous day and `lead_24h` is a
+  full day before the first surfable hour, and neither may (Q2). The index landed early
+  as `007`, built for the payload dedup and identical to the one specified here.
+
+  **Two guards, not one, and the second is the load-bearing one.** The plan assumed
+  `fetched_at <= as_of` was enough to keep reanalysis out of a Q2 answer, because an
+  analysis row genuinely did not exist before we pulled it. It is not enough. Backfilling
+  a year in one afternoon stamps every hour of that year with a recent `fetched_at`, so
+  any as-of after the backfill lets a perfect account of what happened answer a question
+  about what was knowable. The lead policies therefore exclude `is_analysis` outright.
+  Both guards are pinned by tests that fail when either is removed.
+
+  **Feature sets carry their own staleness.** Since `007`, the newest snapshot before an
+  as-of may be hours old only because nothing changed, so the row's age cannot tell you
+  whether we were awake. `008` can, and `Features.stale_by` reports it: a "24 hour lead"
+  taken while the worker was down twelve hours was really a 36 hour lead, and a metric
+  that absorbs that silently credits the score with freshness it never had.
+
+  The return type is the same `GridHour` shape `load_current_hours` serves, so
+  `windows_for_day` consumes it untouched — a backtest scores past days through the
+  product's own path rather than a second copy of it. *Tests:* `test_features.py`,
+  headed by the one named here.
 - [ ] **S9 · Dataset.** `eval/dataset.py` joins observations to features and predictions
   and assigns **event ids** — hours inside one swell are not independent samples. v1 rule:
   new event after a gap > 36 h. Documented as v1, revisited with more data.
