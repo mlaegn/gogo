@@ -197,7 +197,7 @@ one user — start labelling with it immediately, and let the UI unblock everybo
 
   Notifications are still to come: web push (PWA on the home screen for iOS) with email as
   the fallback for the evening message. The manifest is there, so the page installs.
-- [~] **S5d · Make it run without you.** The gap this plan never named: nothing ran by
+- [x] **S5d · Make it run without you.** The gap this plan never named: nothing ran by
   itself. Proof it matters — Ribeira's `spot_grid` row was overwritten by a pre-isolation
   test and pointed at the rounded coordinates from `tests/helpers.py`, so the spot
   vanished from every ranking for four days and nothing complained. A manual `gogo fetch`
@@ -277,9 +277,15 @@ one user — start labelling with it immediately, and let the UI unblock everybo
   `(grid_lat, grid_lon, valid_at, fetched_at DESC)` index S8 asks for. Building it now
   means the harness does not open by indexing a table with millions of rows in it.
 
-  **Still open on your side:** a small VPS (Hetzner/OVH, or Fly) running that compose
-  file, with `.env` only on the box. The image, the two processes, `gogo health` and
-  `scripts/backup.sh` are in the repo.
+  **Done: the box.** A Hetzner CX23 in Helsinki since 10 September 2026, about €9/month
+  with disk backups. Worker on an hourly loop, Postgres unpublished, firewall open only
+  to SSH, nightly `pg_dump` verified and restore-tested, `gogo health` as the container
+  healthcheck. The page runs there too but is not public: reached over `make tunnel`,
+  which matters for data rather than convenience, since labels logged that way land
+  beside the snapshot history instead of starting a second dataset on a laptop.
+
+  Measured over the first five days: 96 cycles, mean interval 60.0 minutes, no gap over
+  75 minutes, zero errors.
 - [x] **S5e · Fixture labels, quarantined.** `gogo demo` writes plausible sessions from
   real reanalysis — real spots, real days, same-day pairs, three raters, a spread of
   ratings — so Stage 2 can be built before 100 real labels exist. An evaluation pipeline

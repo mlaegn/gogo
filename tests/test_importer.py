@@ -161,3 +161,33 @@ def test_a_second_import_of_the_same_file_stores_nothing():
         with conn.cursor() as cur:
             cur.execute("SELECT count(*) AS n FROM observations WHERE user_id = %s", (user_id,))
             assert cur.fetchone()["n"] == len(observations)
+
+
+def test_pairs_you_rated_the_same_are_counted_but_not_comparable():
+    """The headline metric drops pairs with equal ratings, because they carry no
+    ordering information. A file's raw pair count therefore overstates what it is worth,
+    and on the fixture labels it overstated it by more than half."""
+    from gogo.importer import comparable_pair_count, pair_count, parse
+
+    parsed = parse(
+        "date,spot,start,end,rating\n"
+        "2026-03-14,ribeira,07:00,09:00,4\n"
+        "2026-03-14,coxos,09:15,09:30,4\n"     # same rating: no ordering
+        "2026-03-14,foz_lizandro,10:00,10:15,2\n"
+    )
+    assert not parsed.errors
+    assert pair_count(parsed.observations) == 3
+    assert comparable_pair_count(parsed.observations) == 2
+    assert any("no ordering information" in line for line in summarise(parsed.observations))
+
+
+def test_an_unrated_row_cannot_be_compared_with_anything():
+    from gogo.importer import comparable_pair_count, parse
+
+    parsed = parse(
+        "date,spot,start,end,rating\n"
+        "2026-03-14,ribeira,07:00,09:00,4\n"
+        "2026-03-14,coxos,09:15,09:30,\n"
+    )
+    assert not parsed.errors
+    assert comparable_pair_count(parsed.observations) == 0

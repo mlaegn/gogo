@@ -304,6 +304,25 @@ gogo import sessions.csv --dry-run   # check it, write nothing
 gogo import sessions.csv
 ```
 
+Onto the box, from your laptop, which is where labels belong — beside the forecast
+history they have to be joined against:
+
+```bash
+make import-host HOST=root@your.box FILE=sessions.csv          # dry run
+make import-host HOST=root@your.box FILE=sessions.csv WRITE=1  # for real
+```
+
+The file is deleted from the host and the container afterwards either way. It is
+location history and has no business outliving the import that read it, which is also
+why `sessions*.csv` is gitignored.
+
+**The dry run reports *comparable* pairs, and that is the number to read.** Pairwise
+ranking accuracy drops any pair you rated the same, because equal ratings carry no
+ordering information — measured on the fixture labels, that removed more than half of
+them. Three spots on one morning all rated 4 is three pairs and zero comparable ones. So
+when writing the file, use the range, and log a `checked` row for anything you looked at
+and rejected. Both do more for the gate than logging more days.
+
 ### Fixture labels, and why they are fenced off
 
 The evaluation harness cannot be written against an empty table, so `gogo demo` invents

@@ -11,6 +11,11 @@ build/
 .DS_Store
 .transcript*
 backups/
+# A CSV of remembered sessions is location history: where you were, when, how often.
+# This repo is public. Keep them out of it.
+sessions.csv
+sessions*.csv
+*-sessions.csv
 web/node_modules/
 web/dist/
 # Vite output and the schema it is generated from: both derived, both rebuilt by

@@ -1,5 +1,5 @@
 .PHONY: install test weekend weekend-live weekend-db fetch backfill api web phone up down \
-	migrate ui ui-deps ui-dev ui-types openapi host host-web host-public backup health tunnel
+	migrate ui ui-deps ui-dev ui-types openapi host host-web host-public backup health tunnel import-host
 
 # Python only, on purpose: the score, the worker and the tests must stay installable
 # without a Node toolchain. `make ui` is the frontend's entry point.
@@ -68,6 +68,31 @@ phone:
 tunnel:
 	@echo "→ http://localhost:8088   (Ctrl-C to close)"
 	ssh -N -L 8088:127.0.0.1:8000 $(HOST)
+
+# Load a CSV of remembered sessions into the box, from your laptop. Dry run unless
+# WRITE=1, because a hand-written file gets checked before it lands: the dry run reports
+# the same-day pair count, which is the sample size of the headline metric, and names any
+# days with no reanalysis behind them.
+#
+#   make import-host HOST=root@your.box FILE=sessions.csv
+#   make import-host HOST=root@your.box FILE=sessions.csv WRITE=1
+#
+# Labels belong on the box, beside the forecast history they are joined against. Importing
+# into a laptop database splits the dataset across two machines from the first row.
+#
+# The file is removed from both the host and the container afterwards, win or lose. It is
+# location history, and it has no business outliving the import that read it.
+import-host:
+	@test -n "$(FILE)" || { echo "set FILE=path/to/sessions.csv"; exit 1; }
+	@test -n "$(HOST)" || { echo "set HOST=root@your.box"; exit 1; }
+	scp $(FILE) $(HOST):/tmp/gogo-import.csv
+	ssh $(HOST) 'cd /opt/gogo \
+	  && docker compose -f docker-compose.prod.yml cp /tmp/gogo-import.csv worker:/tmp/import.csv \
+	  && docker compose -f docker-compose.prod.yml exec -T worker gogo import /tmp/import.csv $(if $(WRITE),,--dry-run); \
+	  rc=$$?; \
+	  rm -f /tmp/gogo-import.csv; \
+	  docker compose -f docker-compose.prod.yml exec -T -u root worker rm -f /tmp/import.csv; \
+	  exit $$rc'
 
 # Is the forecast fresh and is every spot still ranked? Exit 1 if not.
 health:

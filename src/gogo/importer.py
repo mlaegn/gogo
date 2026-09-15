@@ -202,16 +202,46 @@ def pair_count(observations: list[Observation]) -> int:
     return total
 
 
+def comparable_pair_count(observations: list[Observation]) -> int:
+    """Pairs where you actually preferred one of the two. The real sample size.
+
+    Pairwise ranking accuracy drops pairs you rated the same, because equal ratings carry
+    no ordering information — and measured on the fixture labels, that removed more than
+    half of them. So a file's headline pair count overstates what it is worth, sometimes
+    by a factor of two, and this is the number to look at instead.
+
+    The practical consequence when writing the file: use the range. A day where both
+    spots get a 4 contributes nothing to the metric this project is gated on.
+    """
+    total = 0
+    for same_day in days(observations).values():
+        rated = [o for o in same_day if o.rating is not None]
+        total += sum(
+            1
+            for a, b in combinations(rated, 2)
+            if a.spot_id != b.spot_id and a.rating != b.rating
+        )
+    return total
+
+
 def summarise(observations: list[Observation], covered: set[date] | None = None) -> list[str]:
     """Human-readable lines about what a file is worth, not just how big it is."""
     by_day = days(observations)
     lonely = [day for day, rows in by_day.items() if len({o.spot_id for o in rows}) < 2]
     pairs = pair_count(observations)
 
+    comparable = comparable_pair_count(observations)
     lines = [
         f"{_count(len(observations), 'observation')} across {_count(len(by_day), 'day')}",
-        f"{_count(pairs, 'same-day spot pair')} — the headline metric compares these",
+        f"{_count(pairs, 'same-day spot pair')}, "
+        f"{comparable} of them comparable — the headline metric uses those",
     ]
+    if pairs and comparable < pairs:
+        lines.append(
+            f"{pairs - comparable} pair(s) carry no ordering information: same rating on "
+            "both spots, or one of them unrated. Using the range helps more than logging "
+            "more days"
+        )
     if lonely:
         lines.append(
             f"{_count(len(lonely), 'day')} with a single spot, yielding no pair; "
