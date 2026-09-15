@@ -253,6 +253,26 @@ one user — start labelling with it immediately, and let the UI unblock everybo
   restart it, which is correct — the loop is built to survive a bad hour at Open-Meteo,
   not to exit on one.
 
+  **Measured after five days on the box, and it cost something.** 96 cycles at a mean
+  interval of 60.0 minutes with no gap over 75 minutes; 60 of them appended nothing at
+  all, so 35,756 snapshot rows were kept where 112,896 would have been written — 68%
+  saved, and growth of 6.3 MB/day rather than roughly 20.
+
+  The cost was not obvious until the data was there. Before the dedup, `select distinct
+  fetched_at from forecast_snapshots` was an exact record of when the worker ran. After
+  it, a quiet cycle leaves no trace, and the first coverage query on real data reported
+  "36 gaps, worst 4 hours" for a worker that had in fact never missed an hour. Snapshots
+  can still answer *what we believed at time T*; they can no longer answer *were we
+  awake at time T*, and those come apart precisely during an outage — where an as-of
+  query returns the last row before the hole and reports a fresh forecast, flattering
+  lead time exactly where the system was worst.
+
+  `008` adds `fetch_cycles`: one row per completed fetch, 24 a day. Not backfilled, on
+  purpose — the 36 changed cycles are recoverable from snapshots but the 60 quiet ones
+  are not, and a half-record implying they never happened is a worse lie than an honest
+  hole. `gogo health` now reports cycles in the last 24 h alongside freshness, which is
+  the difference between "it is awake now" and "it has been".
+
   `007` adds the index the payload lookup needs, which is the same
   `(grid_lat, grid_lon, valid_at, fetched_at DESC)` index S8 asks for. Building it now
   means the harness does not open by indexing a table with millions of rows in it.

@@ -40,7 +40,8 @@ history now accumulates on its own. Labels are the bottleneck, and the only one.
 | Mobile page (React + TS): windows + blind post-session card | done |
 | `gogo worker` — fetch loop with backoff + coverage check | done |
 | `gogo health` — freshness + coverage, exit 1 when the box is not working | done |
-| Bounded tables — changed-payload snapshots, pruned `forecast_current` | done |
+| Bounded tables — changed-payload snapshots, pruned `forecast_current` | done — 68% fewer rows, measured |
+| `fetch_cycles` — one row per fetch, so coverage survives the dedup | done |
 | `gogo demo` — quarantined fixture labels for harness work | done |
 | A host to run the worker on, container image, backups | done — worker on a VPS since 2026-09-10, nightly dump, restore tested |
 | The page on that host | running, private — over an SSH tunnel; public needs a domain |
@@ -370,6 +371,10 @@ How to change the product: edit the spot file or the score, add a fixture in `te
 - Timestamps are timezone-aware **UTC** everywhere inside; Lisbon is rendered at the edges. `unixtime` avoids the ambiguous local hour on the autumn DST fold
 - Wind: weather API, knots, land cell
 - Tide is a **phase** from `sea_level_height_msl`, not a Hidrográfico table
+- A cycle that finds nothing changed appends no snapshot, so `forecast_snapshots`
+  answers *what did we believe at T* but not *were we running at T*. `fetch_cycles`
+  answers the second. Measured on the box: 60 of 96 cycles stored nothing, and a
+  coverage query against snapshots alone reported 36 imaginary gaps
 - Six fields are **stored and not scored**: peak period, the combined sea (height and
   period), and a secondary swell train. A forecast is the one thing the archive cannot
   give back, so they are kept from today and left out of the score until the harness can

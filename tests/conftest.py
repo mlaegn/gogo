@@ -34,6 +34,7 @@ MUTABLE_TABLES = (
     "users",
     "forecast_current",
     "forecast_snapshots",
+    "fetch_cycles",
     "spot_grid",
     "spots",
 )

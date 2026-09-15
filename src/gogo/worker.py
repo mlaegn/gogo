@@ -12,6 +12,7 @@ import httpx
 
 from gogo.clock import now_utc, to_local
 from gogo.ingest.archive import ArchiveSource
+from gogo.ingest.openmeteo import SOURCE as FORECAST_SOURCE
 from gogo.ingest.openmeteo import OpenMeteoSource
 from gogo.ingest.protocol import GridHour
 from gogo.models import Spot
@@ -20,10 +21,12 @@ from gogo.store import (
     Written,
     connection,
     current_as_of,
+    cycles_since,
     load_current_hours,
     persist_analysis_hours,
     persist_hours,
     prune_current,
+    record_fetch_cycle,
     seed_spots,
 )
 
@@ -38,9 +41,13 @@ def fetch_once(forecast_days: int = 7) -> Written:
     finally:
         src.close()
 
+    # One stamp for the whole cycle, taken when the data arrived rather than when it
+    # lands, so the snapshots and the cycle row agree on when we came to believe this.
+    fetched_at = now_utc()
     with connection() as conn:
         seed_spots(conn, spots)
-        written = persist_hours(conn, spots, hours)
+        written = persist_hours(conn, spots, hours, fetched_at=fetched_at)
+        record_fetch_cycle(conn, fetched_at, written, source=FORECAST_SOURCE)
         # Serving keeps only hours still ahead of us. Pruning here rather than on a
         # separate schedule means the table is bounded by the same process that fills
         # it, with no second thing to remember to run.
@@ -86,6 +93,10 @@ class Health:
     age_s: float | None
     max_age_s: int
     missing: list[str]
+    #: Completed cycles in the last 24 h. Freshness answers "is it awake now"; this
+    #: answers "has it been". They come apart after an outage the worker recovered
+    #: from on its own, which is exactly the hole you would otherwise never see.
+    cycles_24h: int = 0
 
     @property
     def stale(self) -> bool:
@@ -110,7 +121,10 @@ class Health:
             if self.missing
             else f"spots: all {spot_count} have servable hours"
         )
-        return [freshness, coverage]
+        # 24 of 24 is a full day. Fewer is a hole the worker has already recovered
+        # from, which freshness alone would never show you.
+        cycles = f"cycles: {self.cycles_24h} in the last 24 h"
+        return [freshness, coverage, cycles]
 
 
 HEARTBEAT_ENV = "GOGO_HEARTBEAT_URL"
@@ -151,9 +165,14 @@ def health(max_age_s: int = MAX_AGE_S) -> Health:
     with connection() as conn:
         as_of = current_as_of(conn)
         hours = load_current_hours(conn, spots)
+        recent = cycles_since(conn, now_utc() - timedelta(hours=24))
     age = (now_utc() - as_of).total_seconds() if as_of else None
     return Health(
-        as_of=as_of, age_s=age, max_age_s=max_age_s, missing=_missing(spots, hours)
+        as_of=as_of,
+        age_s=age,
+        max_age_s=max_age_s,
+        missing=_missing(spots, hours),
+        cycles_24h=recent,
     )
 
 

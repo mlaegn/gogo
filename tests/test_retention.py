@@ -348,3 +348,105 @@ def test_nothing_is_sent_when_no_url_is_configured(monkeypatch):
     sent = _capture(monkeypatch, _Ok())
     assert heartbeat() is False
     assert sent == []
+
+
+# --- coverage: was the worker awake? -------------------------------------------------
+
+
+def test_snapshots_alone_cannot_tell_you_the_worker_ran():
+    """The reason `fetch_cycles` exists, stated as a test.
+
+    Two cycles, the second finding nothing changed. Snapshots record one stamp, because
+    an unchanged payload is not appended — so counting distinct `fetched_at` there
+    reports half the cycles and makes a healthy quiet hour look identical to an outage.
+    That distinction matters: an as-of query during a real outage returns the last row
+    before it and calls the forecast fresh, flattering lead time exactly where the
+    system was worst.
+    """
+    from gogo.store import cycles_since, record_fetch_cycle
+
+    spots = _ribeira()
+    hour = grid_hour(valid_at=now_utc() + timedelta(hours=5))
+    conn = _conn()
+    with conn:
+        seed_spots(conn, spots)
+        for stamp in (now_utc() - timedelta(hours=1), now_utc()):
+            written = persist_hours(conn, spots, [hour], fetched_at=stamp)
+            record_fetch_cycle(conn, stamp, written, source="open-meteo")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(DISTINCT fetched_at) AS n FROM forecast_snapshots"
+                " WHERE NOT is_analysis"
+            )
+            assert cur.fetchone()["n"] == 1, "the quiet cycle left no snapshot, as designed"
+
+        assert cycles_since(conn, now_utc() - timedelta(hours=24)) == 2
+
+
+def test_a_cycle_that_stored_nothing_is_still_a_cycle():
+    from gogo.store import Written, cycles_since, record_fetch_cycle
+
+    conn = _conn()
+    with conn:
+        record_fetch_cycle(
+            conn, now_utc(), Written(current=1176, appended=0), source="open-meteo"
+        )
+        assert cycles_since(conn, now_utc() - timedelta(hours=24)) == 1
+
+
+def test_a_repeated_stamp_is_a_retry_not_a_second_cycle():
+    """Bookkeeping must never be the thing that kills a fetch, so a duplicate is a
+    no-op rather than an integrity error."""
+    from gogo.store import Written, cycles_since, record_fetch_cycle
+
+    stamp = now_utc()
+    conn = _conn()
+    with conn:
+        record_fetch_cycle(conn, stamp, Written(current=10, appended=10), "open-meteo")
+        record_fetch_cycle(conn, stamp, Written(current=10, appended=0), "open-meteo")
+        assert cycles_since(conn, now_utc() - timedelta(hours=24)) == 1
+
+
+def test_cycles_older_than_the_window_are_not_counted():
+    from gogo.store import Written, cycles_since, record_fetch_cycle
+
+    conn = _conn()
+    with conn:
+        record_fetch_cycle(
+            conn, now_utc() - timedelta(hours=30), Written(1176, 0), "open-meteo"
+        )
+        record_fetch_cycle(conn, now_utc(), Written(1176, 0), "open-meteo")
+        assert cycles_since(conn, now_utc() - timedelta(hours=24)) == 1
+
+
+def test_health_reports_coverage_as_well_as_freshness():
+    """A worker that died for six hours and recovered looks perfectly fresh. Only the
+    cycle count shows the hole."""
+    from gogo.store import Written, record_fetch_cycle
+
+    spots = load_spots()
+    conn = _conn()
+    with conn:
+        seed_spots(conn, spots)
+        persist_hours(
+            conn,
+            spots,
+            [
+                grid_hour(
+                    requested_lat=s.lat, requested_lon=s.lon,
+                    grid_lat=s.lat, grid_lon=s.lon,
+                    valid_at=now_utc() + timedelta(hours=5),
+                )
+                for s in spots
+            ],
+        )
+        for hours_ago in (3, 2, 1):
+            record_fetch_cycle(
+                conn, now_utc() - timedelta(hours=hours_ago), Written(1176, 0), "open-meteo"
+            )
+
+    report = health()
+    assert report.ok, "fresh and fully covered spots: still healthy"
+    assert report.cycles_24h == 3
+    assert "3 in the last 24 h" in report.lines(spot_count=len(spots))[2]

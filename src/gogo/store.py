@@ -253,6 +253,41 @@ def persist_analysis_hours(
     return written
 
 
+def record_fetch_cycle(
+    conn: psycopg.Connection, fetched_at: datetime, written: Written, source: str
+) -> None:
+    """Write down that a cycle happened, separately from what it stored.
+
+    Snapshots cannot carry this any more. Since 007 a cycle that finds nothing changed
+    appends no row, so the snapshot table answers "what did we believe at time T" but no
+    longer "were we awake at time T". Those come apart precisely during an outage, which
+    is when an as-of query would otherwise hand back a stale row and report it as fresh.
+
+    `ON CONFLICT DO NOTHING` because a duplicate stamp would mean a retry, not a second
+    cycle, and a bookkeeping row must never be the thing that kills a fetch.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO fetch_cycles (fetched_at, source, grid_hours, appended)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (fetched_at) DO NOTHING
+            """,
+            (to_utc(fetched_at), source, written.current, written.appended),
+        )
+    conn.commit()
+
+
+def cycles_since(conn: psycopg.Connection, since: datetime) -> int:
+    """Completed cycles since an instant. Coverage, not freshness."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) AS n FROM fetch_cycles WHERE fetched_at >= %s",
+            (to_utc(since),),
+        )
+        return cur.fetchone()["n"]
+
+
 def current_as_of(conn: psycopg.Connection) -> datetime | None:
     """Freshest fetch behind `forecast_current` — the as-of of anything scored from it."""
     with conn.cursor() as cur:
