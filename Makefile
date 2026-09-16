@@ -1,5 +1,5 @@
 .PHONY: install test weekend weekend-live weekend-db fetch backfill api web phone up down \
-	migrate ui ui-deps ui-dev ui-types openapi host host-web host-public backup health tunnel import-host
+	migrate ui ui-deps ui-dev ui-types openapi host host-web host-public backup health tunnel import-host backtest
 
 # Python only, on purpose: the score, the worker and the tests must stay installable
 # without a Node toolchain. `make ui` is the frontend's entry point.
@@ -93,6 +93,11 @@ import-host:
 	  rm -f /tmp/gogo-import.csv; \
 	  docker compose -f docker-compose.prod.yml exec -T -u root worker rm -f /tmp/import.csv; \
 	  exit $$rc'
+
+# The Stage 2 gate: ranking accuracy with an interval, against every baseline, under
+# both questions. Offline and deterministic — the same arguments give the same bytes.
+backtest:
+	.venv/bin/gogo backtest --dry-run
 
 # Is the forecast fresh and is every spot still ranked? Exit 1 if not.
 health:

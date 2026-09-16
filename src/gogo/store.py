@@ -40,8 +40,19 @@ def seed_spots(conn: psycopg.Connection, spots: list[Spot]) -> None:
             spec = EXCLUDED.spec,
             spec_version = EXCLUDED.spec_version
     """
+    # Insert-only history beside the upsert. `spots.spec` holds the current spec and is
+    # overwritten every fetch; without this, the `spec_version` stamped on every
+    # impression and every eval run points at nothing the moment `coast.yml` changes,
+    # and "reproduce what we recommended in March" stops being answerable.
+    history = """
+        INSERT INTO spot_specs (spot_id, spec_version, spec)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (spot_id, spec_version) DO NOTHING
+    """
     with conn.cursor() as cur:
         for spot in spots:
+            version = spec_version(spot)
+            payload = Jsonb(spot.model_dump())
             cur.execute(
                 sql,
                 (
@@ -50,10 +61,11 @@ def seed_spots(conn: psycopg.Connection, spots: list[Spot]) -> None:
                     spot.lat,
                     spot.lon,
                     spot.region,
-                    Jsonb(spot.model_dump()),
-                    spec_version(spot),
+                    payload,
+                    version,
                 ),
             )
+            cur.execute(history, (spot.id, version, payload))
     conn.commit()
 
 
@@ -286,6 +298,27 @@ def cycles_since(conn: psycopg.Connection, since: datetime) -> int:
             (to_utc(since),),
         )
         return cur.fetchone()["n"]
+
+
+def load_spec_versions(
+    conn: psycopg.Connection, versions: set[str] | None = None
+) -> dict[tuple[str, str], dict]:
+    """Historical specs, keyed by (spot_id, spec_version).
+
+    Only reaches back to when `spot_specs` started being written. Anything older is
+    genuinely gone, which a backtest has to say out loud rather than quietly substitute
+    today's spec for.
+    """
+    with conn.cursor() as cur:
+        if versions is None:
+            cur.execute("SELECT spot_id, spec_version, spec FROM spot_specs")
+        else:
+            cur.execute(
+                "SELECT spot_id, spec_version, spec FROM spot_specs"
+                " WHERE spec_version = ANY(%s)",
+                (list(versions),),
+            )
+        return {(r["spot_id"], r["spec_version"]): r["spec"] for r in cur.fetchall()}
 
 
 def current_as_of(conn: psycopg.Connection) -> datetime | None:

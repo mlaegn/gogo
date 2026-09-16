@@ -461,10 +461,40 @@ features.
   that is going to be normal. So the headline metric's effective sample size is roughly
   *half* the pair count, and the ~100 observation gate buys less statistical power than
   it sounds like. Worth remembering when deciding whether to log a `checked` row.
-- [ ] **S11 · `gogo backtest`.** `--score-version --spec-mode --as-of-policy --from --to`
-  → `eval_runs` + `eval_predictions` + a diffable markdown report. Deterministic, offline.
-  Spec modes: `as_of` reproduces history, `pinned:<version>` applies a proposal to old data.
-  CI splits: golden-fixture regression without Postgres on every push; full eval on demand.
+- [x] **S11 · `gogo backtest`.** All three policies by default, every baseline on the
+  same rows, `eval_runs` + `eval_predictions`, and a markdown report with no wall clock
+  in the body — two runs of the same arguments are byte-identical, so a score change
+  diffs to exactly the numbers it moved. `--seed` is an argument rather than a clock for
+  the same reason. Runs write only to their own tables; a test asserts
+  `window_impressions` is untouched, because an experiment must not be able to edit the
+  record it is measured against.
+
+  **`009` fixes a hole S2 left open.** S2 stamped `spec_version` on every impression so
+  a recommendation stayed replayable after the spot file was edited. It did not:
+  `spots.spec` is overwritten by `seed_spots` on every fetch and impressions carry only
+  the digest, so nothing could resolve a version back into a spec. `--spec-mode as_of`
+  was therefore unimplementable. `spot_specs` now records every spec insert-only, keyed
+  on its own digest. Nothing had been lost yet, and only by luck — every stored digest
+  still matched because `coast.yml` had not been edited since. The first edit would have
+  orphaned all of them at once.
+
+  **`pinned:<version>` names one spot, not a whole file.** A spec version is the digest
+  of a single spot, so a pin swaps that spot and leaves the rest on the current file.
+  That turns out to be the right shape for Stage 3 anyway: change what Coxos needs, hold
+  everything else still, ask whether the one change helped. A pin to a version nobody
+  recorded says so in the report rather than silently substituting today's.
+
+  **`as_of` is honest about what it can reach.** There is no per-day spec history, only
+  the set of versions ever seen, so it resolves to the oldest spec on record. Exact
+  per-day replay needs the `valid_from` column Stage 4 introduces for overlays.
+
+  The CI split the plan asks for is already satisfied: `test_metrics.py` and
+  `test_backtest.py`'s pure parts need no Postgres, and the database-backed ones skip
+  themselves when it is absent.
+
+  **What it prints today:** `n/a` in every cell, and the line "No comparable pairs. Not
+  a bad score — no evidence either way." That is the command working correctly against
+  an empty label table.
 
 **Gate:** `make backtest` prints pairwise accuracy ± CI for the current score against every
 baseline, under both as-of policies. If the hand-tuned score loses to biggest-swell-wins,

@@ -16,6 +16,7 @@ from gogo.demo import (
     generate,
     pick_days,
 )
+from gogo.eval import backtest as bt
 from gogo.importer import parse_file, summarise
 from gogo.ingest.archive import PROVISIONAL_DAYS, SOURCE, TIDE_FROM
 from gogo.ingest.openmeteo import OpenMeteoSource
@@ -206,6 +207,37 @@ def import_observations(args: argparse.Namespace) -> int:
     # A partly-bad file is a failure worth noticing in a shell, even though the good
     # rows landed: re-running after a fix is free.
     return 1 if parsed.errors else 0
+
+
+def run_backtest_cmd(args) -> int:
+    """Measure the score against the labels, and write the working down.
+
+    Prints the report and stores the run. Exit code is 0 even when there is nothing to
+    measure: an empty result is a fact about the label count, not a failure of the
+    command.
+    """
+    policies = tuple(args.as_of_policy) if args.as_of_policy else bt.DEFAULT_POLICIES
+    with connection() as conn:
+        result = bt.run(
+            conn,
+            policies=policies,
+            spec_mode=args.spec_mode,
+            seed=args.seed,
+            only_synthetic=args.synthetic,
+            from_day=date.fromisoformat(args.from_date) if args.from_date else None,
+            to_day=date.fromisoformat(args.to_date) if args.to_date else None,
+        )
+        text = bt.report(result)
+        if not args.dry_run:
+            ids = bt.store(conn, result)
+            text += f"\nStored as eval run(s) {', '.join(str(i) for i in ids)}.\n"
+
+    if args.out:
+        Path(args.out).write_text(text)
+        print(f"Wrote {args.out}")
+    else:
+        print(text)
+    return 0
 
 
 def run_migrations(baseline_through: str | None) -> int:
@@ -460,6 +492,42 @@ def main(argv: list[str] | None = None) -> int:
         f"Defaults to ${HEARTBEAT_ENV}.",
     )
 
+    bk = sub.add_parser(
+        "backtest",
+        help="Measure the score against stored labels. Offline and deterministic.",
+    )
+    bk.add_argument(
+        "--as-of-policy",
+        action="append",
+        choices=list(bt.POLICIES),
+        default=None,
+        help="Repeatable. Defaults to all three, because reporting only best_known is "
+        "how you end up answering the easy question by habit.",
+    )
+    bk.add_argument(
+        "--spec-mode",
+        default=bt.CURRENT,
+        metavar="MODE",
+        help="current (today's coast.yml), as_of (oldest spec on record), or "
+        "pinned:<version> to test a proposal against history.",
+    )
+    bk.add_argument("--from", dest="from_date", default=None, metavar="YYYY-MM-DD")
+    bk.add_argument("--to", dest="to_date", default=None, metavar="YYYY-MM-DD")
+    bk.add_argument(
+        "--seed", type=int, default=bt.DEFAULT_SEED,
+        help="Bootstrap seed. Fixed so two runs are comparable.",
+    )
+    bk.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="Measure FIXTURE labels instead of real ones. Validates the harness; the "
+        "numbers measure our own assumptions and are never a result.",
+    )
+    bk.add_argument("--out", default=None, metavar="FILE", help="Write the report here.")
+    bk.add_argument(
+        "--dry-run", action="store_true", help="Print the report, store nothing."
+    )
+
     demo = sub.add_parser(
         "demo",
         help="Write FIXTURE labels for harness development. Never real data.",
@@ -488,6 +556,8 @@ def main(argv: list[str] | None = None) -> int:
         return import_observations(args)
     if args.cmd == "worker":
         return run_worker(args)
+    if args.cmd == "backtest":
+        return run_backtest_cmd(args)
     if args.cmd == "health":
         return run_health(args)
     if args.cmd == "demo":
