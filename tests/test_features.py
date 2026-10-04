@@ -266,3 +266,43 @@ def test_a_day_we_hold_nothing_for_is_empty_rather_than_an_error():
         got = features_for_day(conn, _ribeira(), date(2020, 1, 1), BEST_KNOWN)
     assert got.hours == []
     assert got.day == date(2020, 1, 1)
+
+
+def test_a_backtest_reads_the_same_tide_phase_the_page_was_shown():
+    """v3. The tide phase is read from the cycle around each hour, and features_for_day
+    pads its day so the 06:00 and 20:00 edges have that cycle under them. Classified
+    from the padded day it must match a week-long series, which is what serving loads.
+    Under v2 the day was classified against its own min and max and 12% of a year's
+    hours came out a different phase from the page."""
+    import math
+
+    from gogo.assemble import forecasts_from_grid
+
+    spots = _ribeira()
+    week_start = from_local_input(DAY - timedelta(days=3), "00:00")
+    week = []
+    for i in range(7 * 24):
+        t = week_start + timedelta(hours=i)
+        amplitude = 1.1 + 0.6 * math.cos(2 * math.pi * i / (14.77 * 24))
+        level = amplitude * math.cos(2 * math.pi * (i + 4) / 12.42)
+        week.extend(
+            h.model_copy(update={"valid_at": t, "sea_level_m": level})
+            for h in grid_day(DAY, spots, 0, 1)
+        )
+
+    conn = _conn()
+    with conn:
+        seed_spots(conn, spots)
+        persist_hours(conn, spots, week, fetched_at=week_start - timedelta(days=1))
+        got = features_for_day(conn, spots, DAY, EVENING_BEFORE)
+
+    def phases(hours):
+        return {
+            h.valid_at: (h.tide, h.tide_trend)
+            for h in forecasts_from_grid(hours)
+            if to_local(h.valid_at).date() == DAY
+        }
+
+    from_backtest = phases(got.hours)
+    assert len(from_backtest) == 24
+    assert from_backtest == {t: p for t, p in phases(week).items() if t in from_backtest}

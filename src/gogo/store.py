@@ -15,6 +15,7 @@ from gogo.ingest.protocol import GridHour
 from gogo.models import Observation, Spot, WindowScore
 from gogo.score import SCORE_VERSION
 from gogo.settings import Settings
+from gogo.tide import TIDE_CONTEXT
 from gogo.versioning import spec_version
 
 
@@ -539,9 +540,11 @@ def _grid_cells(conn: psycopg.Connection) -> dict[str, tuple[float, float]]:
 
 
 #: How far back `load_current_hours` looks by default. The serving paths discard
-#: anything before `now` anyway, so this only has to cover the hour in progress plus
-#: clock skew. Its job is to stop an unbounded read growing with the table.
-CURRENT_LOOKBACK = timedelta(hours=2)
+#: anything before `now`, but the tide phase of the hour in progress is read from the
+#: cycle around it, so the hours just gone have to come along as context — with less,
+#: the first hours served get a different phase than a backtest of the same hour. Its
+#: other job is to stop an unbounded read growing with the table.
+CURRENT_LOOKBACK = TIDE_CONTEXT + timedelta(hours=1)
 
 #: How long an unservable hour is kept before `prune_current` removes it. Generous,
 #: because deleting is cheap and the only cost of keeping a row is size.

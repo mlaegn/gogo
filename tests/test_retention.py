@@ -229,6 +229,20 @@ def test_health_fails_on_a_spot_that_quietly_left_the_ranking():
     assert "NO HOURS" in report.lines(spot_count=len(spots))[1]
 
 
+def test_hours_already_gone_do_not_keep_a_spot_in_the_ranking():
+    """The serving read looks back far enough to carry tide context, so it returns hours
+    that have already happened. A spot holding only those cannot be served, and health
+    must still call it missing."""
+    spots = _ribeira()
+    conn = _conn()
+    with conn:
+        seed_spots(conn, spots)
+        persist_hours(conn, spots, [grid_hour(valid_at=now_utc() - timedelta(hours=4))])
+        assert load_current_hours(conn, spots), "the lookback should carry it as context"
+
+    assert "ribeira" in health().missing
+
+
 def test_health_passes_when_the_forecast_is_fresh_and_every_spot_is_covered():
     spots = load_spots()
     conn = _conn()

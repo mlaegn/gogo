@@ -90,3 +90,54 @@ def test_wrapping_swell_window_sao_lourenco_accepts_north():
     w = score_hour(spots["sao_lourenco"], h)
     assert not w.vetoed
     assert w.score >= 40
+
+
+# --- wind: speed first, then direction (v3) -----------------------------------------
+
+
+def _wind(spot_id: str, kn: float, from_deg: float):
+    spot = by_id()[spot_id]
+    s = score_hour(spot, hour(wind_speed_kn=kn, wind_from_deg=from_deg))
+    return s, next(r for r in s.reasons if r.code == "wind")
+
+
+def test_calm_is_glassy_whichever_way_it_blows():
+    """Under v2, 70% of sub-5 kn hours lost points for "blowing onshore" at 2 kn.
+    Ribeira's onshore is ~260°; 2 kn from there is a glassy morning."""
+    calm_onshore, reason = _wind("ribeira", 2, 260)
+    light_offshore, _ = _wind("ribeira", 8, 80)
+    assert reason.points == 20
+    assert "glassy" in reason.detail
+    assert calm_onshore.score == light_offshore.score
+
+
+def test_calm_beats_a_breeze_from_the_same_direction():
+    calm, _ = _wind("ribeira", 3, 260)
+    breeze, _ = _wind("ribeira", 10, 260)
+    assert calm.score > breeze.score
+
+
+def test_strong_cross_shore_is_a_no():
+    """Ribeira: offshore 80°, so 350° is cross-shore. Its onshore cap is 12 kn, and a
+    cross wind gets a margin over that — 15 kn passes, 22 kn closes the spot. Under v2
+    any cross wind scored 12 points however hard it blew."""
+    moderate, _ = _wind("ribeira", 15, 350)
+    strong, reason = _wind("ribeira", 22, 350)
+    assert not moderate.vetoed
+    assert strong.vetoed
+    assert strong.verdict == "no"
+    assert reason.code == "wind" and "cross-shore" in reason.detail
+
+
+def test_the_cross_shore_limit_follows_the_spot():
+    """Guincho tolerates wind (cap 20 kn); the same 22 kn cross that closes Ribeira
+    does not close it."""
+    guincho, _ = _wind("guincho", 22, 350)
+    assert not guincho.vetoed
+
+
+def test_strong_offshore_says_offshore():
+    """It used to fall through to "cross / sideshore", which named the wrong wind."""
+    _, reason = _wind("ribeira", 22, 80)
+    assert reason.points == 12
+    assert "offshore" in reason.detail

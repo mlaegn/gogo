@@ -40,6 +40,7 @@ from gogo.clock import from_local_input
 from gogo.ingest.protocol import GridHour
 from gogo.models import Spot
 from gogo.store import _grid_cells, _hours_from_rows
+from gogo.tide import TIDE_CONTEXT
 
 #: The best estimate of what the hour actually was: the newest thing we hold, reanalysis
 #: included. Answers Q1 — is the score's judgement of real conditions any good.
@@ -83,6 +84,9 @@ class Features:
     day: date
     policy: str
     as_of: datetime | None
+    #: The day plus `TIDE_CONTEXT` either side. The padding is there for the tide phase,
+    #: which is read from the cycle around each hour; callers select the day itself, as
+    #: `windows_for_day` and the dataset's session filter already do.
     hours: list[GridHour]
     #: The last completed fetch at or before `as_of`, from `fetch_cycles`. `None` for
     #: `best_known` (unbounded) or when no cycle is on record for that period.
@@ -132,6 +136,10 @@ def features_for_day(
 ) -> Features:
     """Every hour of one local day for these spots, as known at the policy's as-of.
 
+    Padded by `TIDE_CONTEXT` either side, under the same as-of bound, so a 06:00 or a
+    20:00 gets the same tide phase here as it did when served. Without the padding an
+    edge hour is classified against a different slice of the cycle than serving used.
+
     Returns the same `GridHour` shape that `load_current_hours` serves, tagged with each
     spot's own coordinates, so the scoring path is identical to the live one. A backtest
     that scored past days through a separate code path would be measuring that path
@@ -146,8 +154,8 @@ def features_for_day(
         cur.execute(
             _AS_OF_SQL,
             {
-                "day_start": from_local_input(day, "00:00"),
-                "day_end": from_local_input(day + timedelta(days=1), "00:00"),
+                "day_start": from_local_input(day, "00:00") - TIDE_CONTEXT,
+                "day_end": from_local_input(day + timedelta(days=1), "00:00") + TIDE_CONTEXT,
                 # Only Q1 may see reanalysis. See the module docstring for why the
                 # timestamp bound alone does not cover this.
                 "allow_analysis": policy == BEST_KNOWN,

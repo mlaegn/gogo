@@ -504,6 +504,40 @@ that is the finding we needed.
 
 Each lands only if the backtest improves, or is neutral for a written reason.
 
+- [x] **S12a · Two bugs, shipped as `v3` without a number.** Found by running the v2
+  score over the backfilled year (368 days, 16 spots, 06–20 local) rather than by a
+  backtest — there are no real labels to backtest against yet. The written reason they
+  land anyway: both are the score contradicting its own inputs, not a weight anyone
+  could argue.
+
+  **Tide phase depended on the query.** `classify_levels` judged each hour against the
+  min and max of whatever series it was handed. Serving hands it about a week, the
+  harness handed it one day, and **12%** of the year's hours came out a different phase
+  in the two — so every backtest was scoring a tide term nobody had been shown. A week
+  also spans springs and neaps, so a neap day read "mid" from dawn to dusk. Each hour is
+  now read against `TIDE_CONTEXT` (7 h) either side, sliding inwards at the ends of a
+  series; `features_for_day` pads its day by that much under the same as-of bound, and
+  `CURRENT_LOOKBACK` grew to cover it. Measured again: 7 of 141,312 day hours disagree,
+  all where the archive ends. "Low" now means low for this cycle. `gogo health` counts
+  only hours still ahead, so the wider lookback cannot hide a spot that left the ranking.
+
+  **Wind ignored its own speed.** Direction was classified first, so 2 kn "from onshore"
+  scored like 11 kn onshore: **70%** of sub-5 kn hours lost wind points, and a glassy
+  morning was the score's most common mistake. And any cross-shore wind scored 12
+  however hard it blew — **60%** of hours with 20 kn+ of cross passed. Now: under 5 kn is
+  glassy (20) whatever the direction; cross-shore vetoes above the spot's onshore cap
+  plus 6 kn (a placeholder, but per-spot so Guincho keeps its tolerance); strong
+  offshore keeps its 12 points and stops calling itself "cross / sideshore". After: 0%
+  of calm hours penalised, 14% of 20 kn+ cross hours still pass (the windy spots).
+
+  **What it cost, honestly:** the score got more generous. Headline "go" days went from
+  261 to 278 of 368 and the mean passing hour from 67.7 to 69.1, mostly calm hours
+  gaining points. The thresholds were not retuned to compensate; that is a Stage 3
+  question with a number attached. *Tests:* `test_tide.py` (each new test fails against
+  the v2 code, and the edge test fails against a shrinking window), the wind block in
+  `test_score.py`, and `test_features.py`'s backtest-matches-the-page tide test, which
+  fails with the padding removed.
+
 - [ ] **S12** Daylight veto (a bug — ship regardless of the number) and continuous tide:
   height plus rate of change, replacing the three-phase proxy.
 - [ ] **S13** Per-spot face-height transfer, seeded from an analytic exposure factor off

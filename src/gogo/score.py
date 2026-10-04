@@ -9,10 +9,29 @@ from gogo.models import HourForecast, HourScore, Reason, Spot, Verdict
 # v2 — the served unit became a range. Per-hour scoring is unchanged from v1; what
 # changed is that adjacent passing hours are grouped and ranked by their mean, so the
 # same forecast can now produce a different ranking.
-SCORE_VERSION = "v2"
+#
+# v3 — two bugs, not a retune; see S12a in docs/plan.md. Wind reads speed as well as
+# direction: calm is glassy wherever it blows from, and a strong cross-shore wind can
+# veto. Tide phase is read from the cycle around each hour instead of from the min and
+# max of whatever series was loaded, so a backtest and the page agree on it.
+SCORE_VERSION = "v3"
 
 # Onshore is ~180° from the spot's offshore_from.
 _ONSHORE_ALIGN_DEG = 75
+_OFFSHORE_ALIGN_DEG = 50
+
+# Below this the direction of the wind says nothing about the surface. Under v2, 70% of
+# sub-5 kn hours on a year of reanalysis lost points for "blowing onshore" at 2 kn.
+_GLASSY_KN = 5.0
+
+# Offshore above this holds waves up and blows the lip back: still surfable, no longer
+# the best case.
+_STRONG_OFFSHORE_KN = 18.0
+
+# Cross-shore is kinder than onshore, so it gets a margin over the spot's onshore cap
+# before it closes the spot. A placeholder: under v2, 60% of hours with 20 kn+ of cross
+# passed with the same 12 points as a gentle breeze, which nobody would argue for.
+_CROSS_OVER_CAP_KN = 6.0
 
 
 def verdict_for(score: int, vetoed: bool = False) -> Verdict:
@@ -119,45 +138,9 @@ def score_hour(spot: Spot, hour: HourForecast) -> HourScore:
             )
         )
 
-    onshore_from = (spot.offshore_from + 180) % 360
-    onshore_align = angle_distance(hour.wind_from_deg, onshore_from)
-    offshore_align = angle_distance(hour.wind_from_deg, spot.offshore_from)
-    if onshore_align <= _ONSHORE_ALIGN_DEG and hour.wind_speed_kn > spot.max_onshore_kn:
-        reasons.append(
-            Reason(
-                code="wind",
-                detail=(
-                    f"{hour.wind_speed_kn:.0f} kn onshore "
-                    f"(from {hour.wind_from_deg:.0f}°) is a no"
-                ),
-                points=0,
-            )
-        )
+    reasons.append(_wind(spot, hour))
+    if reasons[-1].points == 0:
         vetoed = True
-    elif offshore_align <= 50 and hour.wind_speed_kn <= 18:
-        reasons.append(
-            Reason(
-                code="wind",
-                detail=f"{hour.wind_speed_kn:.0f} kn offshore",
-                points=20,
-            )
-        )
-    elif onshore_align <= _ONSHORE_ALIGN_DEG:
-        reasons.append(
-            Reason(
-                code="wind",
-                detail=f"{hour.wind_speed_kn:.0f} kn onshore, still under the cap",
-                points=6,
-            )
-        )
-    else:
-        reasons.append(
-            Reason(
-                code="wind",
-                detail=f"{hour.wind_speed_kn:.0f} kn cross / sideshore",
-                points=12,
-            )
-        )
 
     if hour.tide is None:
         reasons.append(Reason(code="tide", detail="tide unknown", points=8))
@@ -185,6 +168,38 @@ def score_hour(spot: Spot, hour: HourForecast) -> HourScore:
         reasons=reasons,
         vetoed=vetoed,
     )
+
+
+def _wind(spot: Spot, hour: HourForecast) -> Reason:
+    """Speed first, then direction. Direction is only meaningful once there is wind."""
+    kn = hour.wind_speed_kn
+    onshore_from = (spot.offshore_from + 180) % 360
+    onshore_align = angle_distance(hour.wind_from_deg, onshore_from)
+    offshore_align = angle_distance(hour.wind_from_deg, spot.offshore_from)
+
+    if onshore_align <= _ONSHORE_ALIGN_DEG and kn > spot.max_onshore_kn:
+        return Reason(
+            code="wind",
+            detail=f"{kn:.0f} kn onshore (from {hour.wind_from_deg:.0f}°) is a no",
+            points=0,
+        )
+    if kn < _GLASSY_KN:
+        return Reason(code="wind", detail=f"{kn:.0f} kn, glassy", points=20)
+    if offshore_align <= _OFFSHORE_ALIGN_DEG:
+        if kn <= _STRONG_OFFSHORE_KN:
+            return Reason(code="wind", detail=f"{kn:.0f} kn offshore", points=20)
+        return Reason(code="wind", detail=f"{kn:.0f} kn offshore is strong", points=12)
+    if onshore_align <= _ONSHORE_ALIGN_DEG:
+        return Reason(
+            code="wind", detail=f"{kn:.0f} kn onshore, still under the cap", points=6
+        )
+    if kn > spot.max_onshore_kn + _CROSS_OVER_CAP_KN:
+        return Reason(
+            code="wind",
+            detail=f"{kn:.0f} kn cross-shore (from {hour.wind_from_deg:.0f}°) is a no",
+            points=0,
+        )
+    return Reason(code="wind", detail=f"{kn:.0f} kn cross / sideshore", points=12)
 
 
 def rank_hour(spots: list[Spot], hour: HourForecast) -> list[HourScore]:

@@ -56,7 +56,14 @@ def fetch_once(forecast_days: int = 7) -> Written:
 
 
 def _missing(spots: list[Spot], hours: list[GridHour]) -> list[str]:
-    have = {(h.requested_lat, h.requested_lon) for h in hours}
+    # The serving read also returns the hours just gone, as tide context. Those cannot
+    # be served, so they must not count as a spot still being in the ranking.
+    now = now_utc()
+    have = {
+        (h.requested_lat, h.requested_lon)
+        for h in hours
+        if h.valid_at + timedelta(hours=1) > now
+    }
     return [s.id for s in spots if (s.lat, s.lon) not in have]
 
 
