@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
+
 from gogo.geo import angle_distance, in_bearing_window, window_center
 from gogo.models import HourForecast, HourScore, Reason, Spot, Verdict
 
@@ -39,7 +42,40 @@ def verdict_for(score: int, vetoed: bool = False) -> Verdict:
     return "no" if vetoed or score < 40 else "go" if score >= 70 else "maybe"
 
 
-def score_hour(spot: Spot, hour: HourForecast) -> HourScore:
+@dataclass(frozen=True)
+class ScoreOptions:
+    """Changes to the score that exist so the backtest can try them before they ship.
+
+    Every field defaults to off, and `INCUMBENT` is all defaults, which is exactly the
+    score `SCORE_VERSION` names — serving never passes anything else. A candidate in
+    `gogo.eval.candidates` is a set of these; adopting one means making its value the
+    default and bumping the version, never passing options from the serving path.
+    """
+
+    #: Period-aware size (S13, first half). Offshore height alone ignores that a long
+    #: swell grows more as it shoals: breaking height goes as H^0.8 T^0.4 (Komar &
+    #: Gaughan 1972), so 1.2 m at 14 s breaks about 25% bigger than 1.2 m at 8 s. Equal
+    #: breaking height means the size gate can compare `H * sqrt(T / ref)` against the
+    #: spot's range, which leaves an hour at the reference period exactly as it was.
+    #: The square root is physics; the reference is a calibration the backtest picks.
+    size_ref_period_s: float | None = None
+
+
+INCUMBENT = ScoreOptions()
+
+
+def effective_height_m(hour: HourForecast, options: ScoreOptions = INCUMBENT) -> float:
+    """The height the size gate judges: offshore height, or its period-aware stand-in."""
+    if options.size_ref_period_s is None:
+        return hour.swell_height_m
+    return hour.swell_height_m * math.sqrt(
+        max(hour.swell_period_s, 0.0) / options.size_ref_period_s
+    )
+
+
+def score_hour(
+    spot: Spot, hour: HourForecast, options: ScoreOptions = INCUMBENT
+) -> HourScore:
     reasons: list[Reason] = []
     vetoed = False
 
@@ -77,12 +113,21 @@ def score_hour(spot: Spot, hour: HourForecast) -> HourScore:
             )
         )
 
-    hs = hour.swell_height_m
+    hs = effective_height_m(hour, options)
+    # Name both numbers when the period moved the height, so the sentence still explains
+    # the verdict: "0.9 m at 15 s breaks like 1.2 m, in range" is why a 1.0 m min passed.
+    adjusted = round(hs, 1) != round(hour.swell_height_m, 1)
+    lead = (
+        f"{hour.swell_height_m:.1f} m at {hour.swell_period_s:.0f} s breaks like {hs:.1f} m, "
+        if adjusted
+        else f"{hs:.1f} m "
+    )
     if hs < spot.size_min_m:
         reasons.append(
             Reason(
                 code="size",
-                detail=f"{hs:.1f} m is below this spot's {spot.size_min_m:.1f} m min",
+                detail=f"{lead}{'' if adjusted else 'is '}below this spot's "
+                f"{spot.size_min_m:.1f} m min",
                 points=0,
             )
         )
@@ -91,7 +136,8 @@ def score_hour(spot: Spot, hour: HourForecast) -> HourScore:
         reasons.append(
             Reason(
                 code="size",
-                detail=f"{hs:.1f} m looks like a close-out here (max {spot.size_max_m:.1f} m)",
+                detail=f"{lead}{'' if adjusted else 'looks like '}a close-out here "
+                f"(max {spot.size_max_m:.1f} m)",
                 points=0,
             )
         )
@@ -100,7 +146,7 @@ def score_hour(spot: Spot, hour: HourForecast) -> HourScore:
         mid = (spot.size_min_m + spot.size_max_m) / 2
         closeness = 1 - abs(hs - mid) / max(mid - spot.size_min_m, 0.3)
         pts = 10 + int(15 * max(0.0, min(1.0, closeness)))
-        reasons.append(Reason(code="size", detail=f"{hs:.1f} m in range", points=pts))
+        reasons.append(Reason(code="size", detail=f"{lead}in range", points=pts))
 
     if hour.swell_period_s + 0.05 < spot.period_min_s:
         short = spot.period_min_s - hour.swell_period_s

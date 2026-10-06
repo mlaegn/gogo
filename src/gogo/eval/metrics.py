@@ -161,6 +161,55 @@ def compare(data: Dataset, baselines: dict[str, Predictor], seed: int = 0) -> di
     return {name: pairwise_accuracy(data, fn, seed) for name, fn in baselines.items()}
 
 
+def _credit(pa: float, pb: float, a: Sample, b: Sample) -> float:
+    if pa == pb:
+        return 0.5
+    return 1.0 if (pa > pb) == (a.rating > b.rating) else 0.0
+
+
+def _paired(
+    samples: Sequence[Sample], predict: Predictor, against: Predictor
+) -> tuple[float, int] | None:
+    """Mean of (credit for `predict` − credit for `against`) over the same pairs."""
+    total = 0.0
+    n = 0
+    for a, b in _comparable_pairs(samples):
+        pa, pb, qa, qb = predict(a), predict(b), against(a), against(b)
+        if None in (pa, pb, qa, qb):
+            continue
+        total += _credit(pa, pb, a, b) - _credit(qa, qb, a, b)
+        n += 1
+    return (total / n, n) if n else None
+
+
+def paired_difference(
+    data: Dataset, predict: Predictor, against: Predictor, seed: int = 0
+) -> Estimate:
+    """How much better `predict` orders pairs than `against`, on exactly the same pairs.
+
+    This is the number that decides whether a candidate ships, and it is not the
+    difference of two accuracies read off the table. Two intervals computed separately
+    overlap almost always at a few dozen pairs, because most of their width is which
+    swells happened to be labelled — and that is shared. Taking the difference inside
+    every resample cancels it, so what is left is the disagreement between the two
+    predictors and nothing else. Positive means `predict` is better; an interval that
+    straddles zero means the labels cannot tell them apart yet.
+    """
+    by_event: dict[int, list[Sample]] = {}
+    for sample in data.samples:
+        by_event.setdefault(sample.event_id, []).append(sample)
+
+    got = _paired(data.samples, predict, against)
+    lo, hi = _bootstrap(by_event, lambda rows: _paired(rows, predict, against), seed)
+    return Estimate(
+        value=None if got is None else got[0],
+        n=0 if got is None else got[1],
+        events=len(by_event),
+        lo=lo,
+        hi=hi,
+    )
+
+
 # --- is the number itself meaningful? -----------------------------------------------
 
 

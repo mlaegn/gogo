@@ -2,7 +2,7 @@ from datetime import datetime
 
 from gogo.clock import UTC
 from gogo.models import HourForecast
-from gogo.score import rank_hour, score_hour
+from gogo.score import INCUMBENT, ScoreOptions, rank_hour, score_hour
 from gogo.spots import by_id, load_spots
 
 WHEN = datetime(2026, 8, 29, 7, 0, 0, tzinfo=UTC)  # Saturday 08:00 Lisbon
@@ -141,3 +141,61 @@ def test_strong_offshore_says_offshore():
     _, reason = _wind("ribeira", 22, 80)
     assert reason.points == 12
     assert "offshore" in reason.detail
+
+
+# --- period-aware size: a candidate, off by default (S13) ---------------------------
+
+PERIOD_AWARE = ScoreOptions(size_ref_period_s=8.3)
+
+
+def _size(spot_id: str, options: ScoreOptions, **kwargs):
+    s = score_hour(by_id()[spot_id], hour(**kwargs), options)
+    return s, next(r for r in s.reasons if r.code == "size")
+
+
+def test_the_default_options_are_the_incumbent():
+    """Serving never passes options, so the default must be exactly v3."""
+    assert ScoreOptions() == INCUMBENT
+    for h in (1.0, 1.5, 2.5):
+        for t in (6.0, 9.0, 14.0):
+            with_default = score_hour(by_id()["ribeira"], hour(swell_height_m=h, swell_period_s=t))
+            explicit = score_hour(by_id()["ribeira"], hour(swell_height_m=h, swell_period_s=t), INCUMBENT)
+            assert with_default == explicit
+
+
+def test_at_the_reference_period_nothing_changes():
+    """The square root is 1 there, so the candidate only differs where period does."""
+    spots = load_spots()
+    for h in (0.5, 1.0, 1.6, 3.0, 4.5):
+        at_ref = hour(swell_height_m=h, swell_period_s=8.3)
+        for spot in spots:
+            assert score_hour(spot, at_ref, PERIOD_AWARE) == score_hour(spot, at_ref)
+
+
+def test_a_small_long_period_swell_opens_a_spot_that_wants_size():
+    """Coxos wants 1.2 m. 1.1 m at 15 s breaks bigger than 1.2 m at 8 s, so the
+    incumbent's veto is the size gate ignoring the period."""
+    incumbent, _ = _size("coxos", INCUMBENT, swell_height_m=1.1, swell_period_s=15)
+    candidate, reason = _size("coxos", PERIOD_AWARE, swell_height_m=1.1, swell_period_s=15)
+    assert incumbent.vetoed
+    assert not candidate.vetoed
+    assert reason.detail == "1.1 m at 15 s breaks like 1.5 m, in range"
+
+
+def test_short_period_windswell_counts_smaller():
+    _, kept = _size("ribeira", INCUMBENT, swell_height_m=0.85, swell_period_s=6)
+    closed, reason = _size("ribeira", PERIOD_AWARE, swell_height_m=0.85, swell_period_s=6)
+    assert kept.points > 0
+    assert closed.vetoed
+    assert reason.detail == "0.8 m at 6 s breaks like 0.7 m, below this spot's 0.8 m min"
+
+
+def test_a_long_period_swell_can_be_too_big_for_a_spot():
+    closed, reason = _size("ribeira", PERIOD_AWARE, swell_height_m=3.0, swell_period_s=14)
+    assert closed.vetoed
+    assert "close-out" in reason.detail and "breaks like 3.9 m" in reason.detail
+
+
+def test_the_incumbent_sentence_is_unchanged():
+    _, reason = _size("ribeira", INCUMBENT, swell_height_m=1.5, swell_period_s=14)
+    assert reason.detail == "1.5 m in range"

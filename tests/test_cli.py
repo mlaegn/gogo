@@ -107,3 +107,8 @@ def test_weekend_db_never_offers_or_records_an_hour_that_has_passed(monkeypatch,
             first = cur.fetchone()["first"]
     assert first is not None, "the --db path is supposed to record what it showed"
     assert first >= afternoon
+
+
+def test_backtest_refuses_an_unknown_candidate_before_touching_the_database(capsys):
+    assert main(["backtest", "--dry-run", "--candidate", "nope:1"]) == 1
+    assert "unknown candidate" in capsys.readouterr().out

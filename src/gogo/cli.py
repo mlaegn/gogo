@@ -17,6 +17,7 @@ from gogo.demo import (
     pick_days,
 )
 from gogo.eval import backtest as bt
+from gogo.eval.candidates import options_for
 from gogo.importer import parse_file, summarise
 from gogo.ingest.archive import PROVISIONAL_DAYS, SOURCE, TIDE_FROM
 from gogo.ingest.openmeteo import OpenMeteoSource
@@ -217,6 +218,11 @@ def run_backtest_cmd(args) -> int:
     command.
     """
     policies = tuple(args.as_of_policy) if args.as_of_policy else bt.DEFAULT_POLICIES
+    try:
+        options_for(args.candidate or [])
+    except ValueError as exc:
+        print(exc)
+        return 1
     with connection() as conn:
         result = bt.run(
             conn,
@@ -226,6 +232,7 @@ def run_backtest_cmd(args) -> int:
             only_synthetic=args.synthetic,
             from_day=date.fromisoformat(args.from_date) if args.from_date else None,
             to_day=date.fromisoformat(args.to_date) if args.to_date else None,
+            candidates=args.candidate,
         )
         text = bt.report(result)
         if not args.dry_run:
@@ -522,6 +529,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Measure FIXTURE labels instead of real ones. Validates the harness; the "
         "numbers measure our own assumptions and are never a result.",
+    )
+    bk.add_argument(
+        "--candidate",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help="Repeatable. A score change to measure against the incumbent on the same "
+        "rows, e.g. size_period:8.3. Also reports what it would move across every "
+        "stored day, which needs no labels.",
     )
     bk.add_argument("--out", default=None, metavar="FILE", help="Write the report here.")
     bk.add_argument(

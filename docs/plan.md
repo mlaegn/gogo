@@ -538,11 +538,57 @@ Each lands only if the backtest improves, or is neutral for a written reason.
   `test_score.py`, and `test_features.py`'s backtest-matches-the-page tide test, which
   fails with the padding removed.
 
+- [x] **S13a · Candidates: a score change measured before it ships.** Stage 3's rule
+  needs something to compare, and `gogo backtest` could only score with the shipped
+  score. `ScoreOptions` in `score.py` holds changes under test, every field off by
+  default, and `INCUMBENT` is exactly `SCORE_VERSION`; serving never passes options.
+  `gogo backtest --candidate size_period:8.3` (repeatable; `make backtest-candidates`
+  runs the sweep) re-scores each label's own stored hours with the candidate, so it is
+  measured on the incumbent's rows, events and resamples — a test pins that incumbent
+  options reproduce `predicted_score` exactly, or every Δ would be partly bookkeeping.
+
+  **The deciding number is a paired difference.** `metrics.paired_difference` is
+  candidate minus incumbent credit on the same pairs, computed inside every resample.
+  Two accuracies with separate intervals overlap almost always at a few dozen pairs,
+  because most of their width is which swells happened to be labelled, and that part is
+  shared; differencing inside the resample cancels it. Adopt on an interval clear of
+  zero under `best_known` with the lead policies not worse.
+
+  **And a section that needs no labels.** `candidates.movement` re-ranks every stored day
+  under incumbent and candidate: headline spot changes, verdict counts, surfable hours a
+  veto opens or closes per spot, and the latest days the headline disagrees. It cannot
+  say which is right. It says how big the bet is, and the disagreement days are where a
+  `checked` pair at both spots would settle it — the exploration budget from the Traps,
+  aimed. Found while testing it: since S12a pads each day for tide context, an empty day
+  beside a stored one has hours and nothing surfable, and was counted as a phantom "no".
+
+  **First candidate: period-aware size**, the first half of S13. Breaking height goes
+  as H^0.8 T^0.4 (Komar & Gaughan), so equal breaking height means the size gate judges
+  `H * sqrt(T / ref)`: unchanged at the reference period, bigger for groundswell,
+  smaller for windswell. The square root is physics; the reference is a calibration, so
+  the sweep is the coast's p10 / median / ~p75 / p90 of mean period (6.5, 8.3, 10,
+  11.5 s). Reasons name both numbers: "1.1 m at 15 s breaks like 1.5 m, in range".
+
+  **What it moves, over 380 stored days, before a single label:** the headline spot on
+  84–123 days (22–32%) depending on the reference, and headline "no" days from 19 to
+  34–40 at *every* reference. It closes far more than it opens — 1–9% of a spot's hours
+  closed against 0–4% opened. The reason is a fact about this coast: height and period
+  correlate at 0.62 (swells under 1 m average 6.8 s, over 2.5 m average 10.3 s), so the
+  period factor shrinks small days and grows big ones, stretching both tails outward
+  past each spot's `size_min_m`/`size_max_m`. Those ranges were written in raw offshore
+  height and silently assume that correlation. So adopting this probably means
+  re-anchoring the ranges too, and a second candidate that does so is the obvious next
+  experiment. Neither ships without real pairs; with none locally, every Δ reads n/a.
+  On the 120 synthetic labels the plumbing reacts as it should: Δ between −0.008 and
+  +0.031, every interval straddling zero.
+
 - [ ] **S12** Daylight veto (a bug — ship regardless of the number) and continuous tide:
   height plus rate of change, replacing the three-phase proxy.
 - [ ] **S13** Per-spot face-height transfer, seeded from an analytic exposure factor off
-  coastline orientation before anything is fitted. Offshore `swell_wave_height` is not the
-  wave at the beach, and today that difference hides inside `size_min_m`/`size_max_m`.
+  coastline orientation before anything is fitted. Period-aware size is built as a
+  candidate (S13a); exposure needs `faces_deg` and an open/sheltered flag per spot.
+  Offshore `swell_wave_height` is not the wave at the beach, and today that difference
+  hides inside `size_min_m`/`size_max_m`.
 - [ ] **S14** Multi-partition swell, directional spread, wind-sea ratio.
 - [ ] **S15** Spot-facing normal in `coast.yml` → shadowing and substitution
   ("too big here, go round the peninsula"). Baleal works when Supertubos does not.

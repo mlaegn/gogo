@@ -22,6 +22,7 @@ from gogo.eval.metrics import (
     calibration,
     compare,
     ndcg_at_3,
+    paired_difference,
     pairwise_accuracy,
     veto_quality,
 )
@@ -314,3 +315,56 @@ def test_ndcg_punishes_putting_the_worst_spot_first():
         _sample(3, "c", rating=1, predicted=90),
     ])
     assert ndcg_at_3(data, baselines.incumbent).value < 1.0
+
+
+# --- paired difference: the number a candidate is adopted on ------------------------
+
+
+def _by_prediction(predictions: dict[int, float | None]):
+    return lambda sample: predictions[sample.observation_id]
+
+
+def _three_days():
+    """Three events, one same-day pair each, the first spot always rated higher."""
+    rows = []
+    for event in range(3):
+        day = DAY + timedelta(days=event * 3)
+        rows.append(_sample(2 * event, "ribeira", 4, 70, day=day, event=event))
+        rows.append(_sample(2 * event + 1, "coxos", 2, 50, day=day, event=event))
+    return _dataset(rows)
+
+
+def test_a_predictor_against_itself_differs_by_exactly_nothing():
+    data = _three_days()
+    got = paired_difference(data, baselines.incumbent, baselines.incumbent)
+    assert got.value == 0.0
+    assert (got.lo, got.hi) == (0.0, 0.0), "resampled together, so no width at all"
+    assert got.n == 3
+
+
+def test_right_against_backwards_is_plus_one():
+    data = _three_days()
+    backwards = _by_prediction({i: (1.0 if i % 2 else 0.0) for i in range(6)})
+    assert paired_difference(data, baselines.incumbent, backwards).value == 1.0
+    assert paired_difference(data, backwards, baselines.incumbent).value == -1.0
+
+
+def test_a_tie_against_a_win_is_half_a_pair():
+    data = _three_days()
+    no_opinion = _by_prediction(dict.fromkeys(range(6), 5.0))
+    assert paired_difference(data, baselines.incumbent, no_opinion).value == 0.5
+
+
+def test_a_pair_either_side_cannot_score_is_dropped_from_both():
+    """Otherwise the two would be measured on different pairs, which is the thing the
+    paired difference exists to prevent."""
+    data = _three_days()
+    blind_on_day_one = _by_prediction({0: None, 1: None, 2: 1.0, 3: 0.0, 4: 1.0, 5: 0.0})
+    got = paired_difference(data, blind_on_day_one, baselines.incumbent)
+    assert got.n == 2
+    assert got.value == 0.0
+
+
+def test_no_pairs_is_no_answer_rather_than_zero():
+    got = paired_difference(_dataset([]), baselines.incumbent, baselines.incumbent)
+    assert got.value is None and got.n == 0

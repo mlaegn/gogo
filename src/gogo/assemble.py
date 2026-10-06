@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from gogo.clock import to_local
 from gogo.ingest.protocol import GridHour
 from gogo.models import HourForecast, HourScore, Spot, WindowScore
-from gogo.score import score_hour, verdict_for
+from gogo.score import INCUMBENT, ScoreOptions, score_hour, verdict_for
 from gogo.tide import attach_tide
 
 
@@ -179,13 +179,17 @@ def _closed_window(scored: list[HourScore]) -> WindowScore:
 
 
 def scored_hours(
-    spot: Spot, hours: list[GridHour], day: date, not_before: datetime | None = None
+    spot: Spot,
+    hours: list[GridHour],
+    day: date,
+    not_before: datetime | None = None,
+    options: ScoreOptions = INCUMBENT,
 ) -> list[HourScore]:
     """One spot's day, hour by hour. What the detail view shows behind a tap."""
     series = forecasts_from_grid(
         [h for h in hours if (h.requested_lat, h.requested_lon) == (spot.lat, spot.lon)]
     )
-    return [score_hour(spot, h) for h in _surfable_on(series, day, not_before)]
+    return [score_hour(spot, h, options) for h in _surfable_on(series, day, not_before)]
 
 
 def windows_for_day(
@@ -193,6 +197,7 @@ def windows_for_day(
     hours: list[GridHour],
     day: date,
     not_before: datetime | None = None,
+    options: ScoreOptions = INCUMBENT,
 ) -> list[WindowScore]:
     """Best window per spot for one local day, ranked.
 
@@ -205,6 +210,9 @@ def windows_for_day(
 
     `not_before` drops hours that have already passed, so a window offered at 15:00 does
     not begin at 06:00. Serving paths pass `now`; a backtest passes its as-of.
+
+    `options` is for the backtest's candidates only. Serving never passes it, so what
+    the page shows is always the score `SCORE_VERSION` names.
     """
     by_request: dict[tuple[float, float], list[GridHour]] = defaultdict(list)
     for h in hours:
@@ -216,7 +224,7 @@ def windows_for_day(
         surfable = _surfable_on(series, day, not_before)
         if not surfable:
             continue
-        scored = [score_hour(spot, hour) for hour in surfable]
+        scored = [score_hour(spot, hour, options) for hour in surfable]
         runs = runs_of_passing_hours(scored)
         if runs:
             ranked.append(

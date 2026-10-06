@@ -1,5 +1,5 @@
 .PHONY: install test weekend weekend-live weekend-db fetch backfill api web phone up down \
-	migrate ui ui-deps ui-dev ui-types openapi host host-web host-public backup health tunnel import-host backtest
+	migrate ui ui-deps ui-dev ui-types openapi host host-web host-public backup health tunnel import-host backtest backtest-candidates
 
 # Python only, on purpose: the score, the worker and the tests must stay installable
 # without a Node toolchain. `make ui` is the frontend's entry point.
@@ -98,6 +98,13 @@ import-host:
 # both questions. Offline and deterministic — the same arguments give the same bytes.
 backtest:
 	.venv/bin/gogo backtest --dry-run
+
+# Stage 3: the period-aware size gate at four reference periods, each against the
+# incumbent on the same rows, plus what each would move across every stored day.
+backtest-candidates:
+	.venv/bin/gogo backtest --dry-run \
+	  --candidate size_period:6.5 --candidate size_period:8.3 \
+	  --candidate size_period:10 --candidate size_period:11.5
 
 # Is the forecast fresh and is every spot still ranked? Exit 1 if not.
 health:

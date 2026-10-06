@@ -34,6 +34,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from gogo.eval import baselines as base
+from gogo.eval import candidates as cand
 from gogo.eval import metrics as metric
 from gogo.eval.dataset import Dataset, build_dataset
 from gogo.features import BEST_KNOWN, EVENING_BEFORE, LEAD_24H, POLICIES
@@ -123,6 +124,14 @@ def resolve_spots(
 
 
 @dataclass(frozen=True)
+class CandidateResult:
+    accuracy: metric.Estimate
+    #: Candidate minus incumbent, on the same pairs and the same resamples. The number
+    #: a Stage 3 change is adopted on.
+    versus_incumbent: metric.Estimate
+
+
+@dataclass(frozen=True)
 class PolicyResult:
     policy: str
     data: Dataset
@@ -131,6 +140,7 @@ class PolicyResult:
     ndcg: metric.Estimate
     brier: metric.Estimate
     calibration: list[metric.Bucket]
+    candidates: dict[str, CandidateResult] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -142,6 +152,8 @@ class Backtest:
     from_day: date | None
     to_day: date | None
     results: list[PolicyResult]
+    #: Per candidate, what it changes across every stored day. Needs no labels.
+    movement: dict[str, cand.Movement] = field(default_factory=dict)
 
 
 def run(
@@ -152,14 +164,23 @@ def run(
     only_synthetic: bool = False,
     from_day: date | None = None,
     to_day: date | None = None,
+    candidates: list[str] | None = None,
 ) -> Backtest:
-    """Build the dataset under each policy and measure it against every baseline."""
+    """Build the dataset under each policy and measure it against every baseline.
+
+    `candidates` are names from `gogo.eval.candidates`, each measured against the
+    incumbent on the same rows, plus a label-free account of what it would move.
+    """
     for policy in policies:
         if policy not in POLICIES:
             raise ValueError(f"unknown as-of policy {policy!r}; expected {POLICIES}")
+    # Parse before any work, so a typo fails in a second rather than after a year of
+    # re-ranking.
+    tried = cand.options_for(candidates or [])
 
     spec = resolve_spots(conn, spec_mode)
     suite = base.standard(spec.spots)
+    predictors = {name: cand.predictor(o, spec.spots) for name, o in tried.items()}
     results = []
     for policy in policies:
         data = build_dataset(
@@ -182,6 +203,15 @@ def run(
                 ndcg=metric.ndcg_at_3(data, base.incumbent, seed),
                 brier=metric.brier_would_return(data, base.incumbent, seed),
                 calibration=metric.calibration(data),
+                candidates={
+                    name: CandidateResult(
+                        accuracy=metric.pairwise_accuracy(data, predict, seed),
+                        versus_incumbent=metric.paired_difference(
+                            data, predict, base.incumbent, seed
+                        ),
+                    )
+                    for name, predict in predictors.items()
+                },
             )
         )
 
@@ -193,6 +223,7 @@ def run(
         from_day=from_day,
         to_day=to_day,
         results=results,
+        movement=cand.movement(conn, spec.spots, tried, from_day, to_day),
     )
 
 
@@ -247,6 +278,21 @@ def report(result: Backtest) -> str:
             mark = " **(incumbent)**" if name == "incumbent" else ""
             out.append(f"| `{name}`{mark} | {value} | {interval} | {est.n} | {est.events} |")
 
+        if policy.candidates:
+            out += ["", "### Candidates against the incumbent", "",
+                    "Δ is candidate minus incumbent on the same pairs, resampled "
+                    "together. It decides; the accuracy column is for reading.", "",
+                    "| candidate | accuracy | Δ vs incumbent | 95% interval | pairs |",
+                    "|---|---|---|---|---|"]
+            for name, got in policy.candidates.items():
+                acc, delta = got.accuracy, got.versus_incumbent
+                value = "n/a" if acc.value is None else f"{acc.value:.3f}"
+                d = "n/a" if delta.value is None else f"{delta.value:+.3f}"
+                interval = (
+                    "n/a" if delta.lo is None else f"{delta.lo:+.3f} – {delta.hi:+.3f}"
+                )
+                out.append(f"| `{name}` | {value} | {d} | {interval} | {delta.n} |")
+
         out += ["", "### Other metrics", "",
                 "| metric | value | n |", "|---|---|---|"]
         for label, est in (
@@ -263,6 +309,8 @@ def report(result: Backtest) -> str:
                     "| predicted | n | mean rating |", "|---|---|---|"]
             for band in policy.calibration:
                 out.append(f"| {band.low}–{band.high} | {band.n} | {band.mean_rating:.2f} |")
+
+    out += _movement_section(result.movement)
 
     out += ["", "---", ""]
     headline = next(
@@ -295,6 +343,51 @@ def report(result: Backtest) -> str:
     return "\n".join(out) + "\n"
 
 
+def _verdicts(counts) -> str:
+    return " / ".join(f"{counts.get(v, 0)} {v}" for v in ("go", "maybe", "no"))
+
+
+def _movement_section(movement: dict[str, cand.Movement]) -> list[str]:
+    """What each candidate would change, over every stored day. No labels involved.
+
+    In the order the candidates were given, which is as deterministic as sorting and
+    keeps a sweep like 6.5 / 8.3 / 10 / 11.5 reading in order.
+    """
+    if not movement:
+        return []
+    out = ["", "## What each candidate moves", "",
+           "Re-ranked over every stored day with `best_known` features. Needs no labels "
+           "and says nothing about which is right — only how big a bet it is, and which "
+           "days a label would settle it on.", "",
+           "| candidate | days | headline spot changes | headline go / maybe / no |",
+           "|---|---|---|---|"]
+    for name, moved in movement.items():
+        if not moved.days:
+            out.append(f"| `{name}` | 0 | n/a | n/a |")
+            continue
+        out.append(
+            f"| `{name}` | {moved.days} | {moved.headline_changed} "
+            f"({moved.headline_changed / moved.days:.0%}) | "
+            f"{_verdicts(moved.incumbent_verdicts)} → {_verdicts(moved.candidate_verdicts)} |"
+        )
+    for name, moved in movement.items():
+        if not moved.days:
+            continue
+        out += ["", f"### `{name}`: surfable hours a veto opens or closes", "",
+                "| spot | opened | closed |", "|---|---|---|"]
+        for spot_id in sorted(moved.hours):
+            n = moved.hours[spot_id]
+            out.append(
+                f"| {spot_id} | {moved.opened[spot_id] / n:.1%} | "
+                f"{moved.closed[spot_id] / n:.1%} |"
+            )
+        if moved.disagreements:
+            out += ["", "Latest days the headline differs (incumbent → candidate):", ""]
+            for day, was, became in moved.disagreements[-5:]:
+                out.append(f"- {day}: {was or 'nothing'} → {became or 'nothing'}")
+    return out
+
+
 def store(conn: psycopg.Connection, result: Backtest) -> list[int]:
     """Persist each policy's run and its per-label detail. Returns the run ids."""
     ids = []
@@ -314,6 +407,25 @@ def store(conn: psycopg.Connection, result: Backtest) -> list[int]:
                 "veto_recall": policy.veto.recall.value,
                 "ndcg_at_3": policy.ndcg.value,
                 "brier_would_return": policy.brier.value,
+                "candidates": {
+                    name: {
+                        "pairwise": got.accuracy.value,
+                        "delta": got.versus_incumbent.value,
+                        "delta_lo": got.versus_incumbent.lo,
+                        "delta_hi": got.versus_incumbent.hi,
+                        "pairs": got.versus_incumbent.n,
+                    }
+                    for name, got in policy.candidates.items()
+                },
+                "movement": {
+                    name: {
+                        "days": moved.days,
+                        "headline_changed": moved.headline_changed,
+                        "opened": dict(sorted(moved.opened.items())),
+                        "closed": dict(sorted(moved.closed.items())),
+                    }
+                    for name, moved in result.movement.items()
+                },
             }
             cur.execute(
                 """
