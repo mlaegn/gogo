@@ -17,7 +17,7 @@ from gogo.eval import candidates as cand
 from gogo.eval.dataset import build_dataset
 from gogo.features import BEST_KNOWN
 from gogo.models import Observation
-from gogo.score import INCUMBENT, ScoreOptions
+from gogo.score import INCUMBENT, ScoreOptions, typical_period_s
 from gogo.spots import load_spots
 from gogo.store import connect, ensure_user, persist_hours, record_observation, seed_spots
 
@@ -51,6 +51,9 @@ def test_a_name_parses_to_options_and_a_canonical_name():
         "size_period:8.3", ScoreOptions(size_ref_period_s=8.3)
     )
     assert cand.parse("size_period:10")[0] == "size_period:10"
+    assert cand.parse("size_period:typical") == (
+        "size_period:typical", ScoreOptions(size_period_typical=True)
+    )
 
 
 @pytest.mark.parametrize(
@@ -144,6 +147,17 @@ def test_movement_counts_nothing_when_nothing_changes():
     assert m.headline_changed == 0
     assert sum(m.opened.values()) == sum(m.closed.values()) == 0
     assert m.hours["ribeira"] == 14, "06:00–20:00 local, every surfable hour counted"
+
+
+def test_re_anchored_movement_is_nothing_on_a_typical_day():
+    spots = _spots("ribeira", "coxos", "foz_lizandro")
+    conn = _conn()
+    with conn:
+        _hours(conn, spots, swell_height_m=1.3, swell_period_s=typical_period_s(1.3))
+        moved = cand.movement(conn, spots, cand.options_for(["size_period:typical"]))
+    m = moved["size_period:typical"]
+    assert m.headline_changed == 0
+    assert sum(m.opened.values()) == sum(m.closed.values()) == 0
 
 
 def test_movement_sees_a_candidate_close_a_spot():

@@ -99,12 +99,14 @@ import-host:
 backtest:
 	.venv/bin/gogo backtest --dry-run
 
-# Stage 3: the period-aware size gate at four reference periods, each against the
-# incumbent on the same rows, plus what each would move across every stored day.
+# Stage 3: the period-aware size gate at four reference periods, and re-anchored at
+# the period typical for each height, each against the incumbent on the same rows,
+# plus what each would move across every stored day.
 backtest-candidates:
 	.venv/bin/gogo backtest --dry-run \
 	  --candidate size_period:6.5 --candidate size_period:8.3 \
-	  --candidate size_period:10 --candidate size_period:11.5
+	  --candidate size_period:10 --candidate size_period:11.5 \
+	  --candidate size_period:typical
 
 # Is the forecast fresh and is every spot still ranked? Exit 1 if not.
 health:

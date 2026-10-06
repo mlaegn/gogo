@@ -2,7 +2,17 @@ from datetime import datetime
 
 from gogo.clock import UTC
 from gogo.models import HourForecast
-from gogo.score import INCUMBENT, ScoreOptions, rank_hour, score_hour
+import pytest
+
+from gogo.score import (
+    INCUMBENT,
+    TYPICAL_PERIOD,
+    ScoreOptions,
+    rank_hour,
+    score_hour,
+    typical_equivalent_m,
+    typical_period_s,
+)
 from gogo.spots import by_id, load_spots
 
 WHEN = datetime(2026, 8, 29, 7, 0, 0, tzinfo=UTC)  # Saturday 08:00 Lisbon
@@ -199,3 +209,72 @@ def test_a_long_period_swell_can_be_too_big_for_a_spot():
 def test_the_incumbent_sentence_is_unchanged():
     _, reason = _size("ribeira", INCUMBENT, swell_height_m=1.5, swell_period_s=14)
     assert reason.detail == "1.5 m in range"
+
+
+def test_a_number_beside_a_veto_never_contradicts_it():
+    """0.76 m used to print as "0.8 m is below this spot's 0.8 m min"."""
+    _, reason = _size("ribeira", INCUMBENT, swell_height_m=0.76, swell_period_s=9)
+    assert reason.detail == "0.7 m is below this spot's 0.8 m min"
+    _, reason = _size("ribeira", INCUMBENT, swell_height_m=3.24, swell_period_s=9)
+    assert reason.detail == "3.3 m looks like a close-out here (max 3.2 m)"
+
+
+# --- period-aware size, re-anchored at the period typical for each height -----------
+
+TYPICAL = ScoreOptions(size_period_typical=True)
+
+
+def test_the_typical_period_table_is_monotone():
+    """The inversion in typical_equivalent_m needs it, and so does the physics: a
+    bigger swell on this coast is never shorter-period on average."""
+    heights = [h for h, _ in TYPICAL_PERIOD]
+    periods = [t for _, t in TYPICAL_PERIOD]
+    assert heights == sorted(heights) and len(set(heights)) == len(heights)
+    assert periods == sorted(periods)
+
+
+def test_typical_period_interpolates_and_holds_flat_past_the_ends():
+    assert typical_period_s(0.1) == TYPICAL_PERIOD[0][1]
+    assert typical_period_s(9.0) == TYPICAL_PERIOD[-1][1]
+    assert typical_period_s(1.0) == pytest.approx((6.9 + 7.5) / 2)
+
+
+def test_a_typical_day_breaks_like_itself():
+    for h in (0.3, 0.8, 1.37, 2.0, 3.3, 6.0):
+        assert typical_equivalent_m(h, typical_period_s(h)) == pytest.approx(h, abs=1e-9)
+
+
+def test_on_a_typical_day_the_re_anchored_gate_is_the_incumbent():
+    """The point of re-anchoring: the ranges in coast.yml keep meaning what they were
+    written to mean, and only an unusual period for the size moves anything."""
+    spots = load_spots()
+    for h in (0.45, 0.65, 0.95, 1.35, 1.85, 2.65, 3.05, 3.65, 4.25):
+        typical_hour = hour(swell_height_m=h, swell_period_s=typical_period_s(h))
+        for spot in spots:
+            assert score_hour(spot, typical_hour, TYPICAL) == score_hour(spot, typical_hour)
+
+
+def test_re_anchoring_removes_the_stretch_a_fixed_reference_puts_on_big_days():
+    """A typical 3 m day here is ~9.9 s. Against a fixed 8.3 s reference it counts as
+    3.3 m and closes Ribeira (max 3.2 m), purely because big days are long-period
+    days. Re-anchored, it is the 3 m day the spot file was written for."""
+    big = dict(swell_height_m=3.0, swell_period_s=typical_period_s(3.0))
+    fixed, _ = _size("ribeira", PERIOD_AWARE, **big)
+    typical, reason = _size("ribeira", TYPICAL, **big)
+    assert fixed.vetoed
+    assert not typical.vetoed
+    assert reason.detail == "3.0 m in range"
+
+
+def test_re_anchored_long_period_still_counts_bigger_and_windswell_smaller():
+    opened, reason = _size("coxos", TYPICAL, swell_height_m=1.1, swell_period_s=15)
+    assert not opened.vetoed
+    assert reason.detail == "1.1 m at 15 s breaks like a typical 1.5 m, in range"
+    closed, reason = _size("ribeira", TYPICAL, swell_height_m=0.85, swell_period_s=6)
+    assert closed.vetoed
+    assert "breaks like a typical 0.7 m, below" in reason.detail
+
+
+def test_the_two_period_options_are_exclusive():
+    with pytest.raises(ValueError, match="exclusive"):
+        ScoreOptions(size_ref_period_s=8.3, size_period_typical=True)

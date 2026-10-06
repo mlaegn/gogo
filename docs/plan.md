@@ -577,10 +577,28 @@ Each lands only if the backtest improves, or is neutral for a written reason.
   period factor shrinks small days and grows big ones, stretching both tails outward
   past each spot's `size_min_m`/`size_max_m`. Those ranges were written in raw offshore
   height and silently assume that correlation. So adopting this probably means
-  re-anchoring the ranges too, and a second candidate that does so is the obvious next
-  experiment. Neither ships without real pairs; with none locally, every Δ reads n/a.
-  On the 120 synthetic labels the plumbing reacts as it should: Δ between −0.008 and
-  +0.031, every interval straddling zero.
+  re-anchoring the ranges too.
+
+  **Second candidate: `size_period:typical`, the ranges re-anchored.** Instead of a
+  fixed reference, the hour is compared with a *typical* day: the height whose usual
+  period breaks the same, from `TYPICAL_PERIOD` in `score.py` — the median ERA5 mean
+  period per 0.25 m bin over the year, 6.5 s at 0.5 m rising to 10.9 s at 5 m. A typical
+  day now scores exactly as the incumbent does (a test sweeps every spot), the reference
+  cancels, and only what period says *beyond* height moves the gate. It moves the
+  headline on 62 of 380 days (16%) against 84–123 for the fixed references, headline
+  "no" days go 19 → 21 rather than doubling, and opened and closed hours come out
+  roughly balanced (0.5–2.5% each per spot), with Coxos and Supertubos — the reefs that
+  want groundswell — opening most. That is the shape the physics predicts, which is not
+  the same as being right. Two caveats on the table itself: it is coast-wide, and the
+  sheltered Caparica and Carcavelos cells run 0.4–0.9 s longer at 1–2 m, so per-cell is
+  a refinement; and it comes from ERA5, while the forecast model's first two weeks
+  looked 0.6–0.7 s shorter at 1–1.5 m — recheck once `forecast_snapshots` holds months.
+
+  Neither candidate ships without real pairs; with none locally, every Δ reads n/a. On
+  the 120 synthetic labels the plumbing reacts as it should — Δ between −0.008 and
+  +0.031, every interval straddling zero. Found on the way, and fixed for the incumbent
+  too since it touches text only: a height beside a veto is now rounded away from the
+  limit, so 0.76 m prints as "0.7 m is below this spot's 0.8 m min" instead of "0.8 m".
 
 - [ ] **S12** Daylight veto (a bug — ship regardless of the number) and continuous tide:
   height plus rate of change, replacing the three-phase proxy.

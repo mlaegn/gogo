@@ -60,12 +60,78 @@ class ScoreOptions:
     #: The square root is physics; the reference is a calibration the backtest picks.
     size_ref_period_s: float | None = None
 
+    #: Period-aware size with the spot ranges re-anchored. A fixed reference stretches
+    #: both tails on this coast, because height and period correlate (0.62): small days
+    #: are short-period and shrink, big days are long-period and grow, so a fixed
+    #: reference closes the bottom and the top of every `size_min_m`..`size_max_m`.
+    #: Those ranges were written in raw height and already assume that correlation.
+    #: This compares the hour with a *typical* day instead — the height whose usual
+    #: period (`TYPICAL_PERIOD`) breaks the same — so a typical day scores exactly as it
+    #: does today, the reference cancels out, and only what period says beyond height
+    #: moves the gate: long-period small swell up, short-period big windswell down.
+    size_period_typical: bool = False
+
+    def __post_init__(self) -> None:
+        if self.size_ref_period_s is not None and self.size_period_typical:
+            raise ValueError("size_ref_period_s and size_period_typical are exclusive")
+
 
 INCUMBENT = ScoreOptions()
+
+#: Median Open-Meteo *mean* swell period by swell height on this coast, at 0.25 m bin
+#: centres: ERA5 through the marine archive, 2025-09-01..2026-09-03, all seven cells,
+#: 61,824 hours, bins with at least 300 hours. A constant on purpose — the score is
+#: pure and must not read the database — so re-measuring it is an explicit edit with a
+#: backtest attached. Monotone, which `typical_equivalent_m` relies on; a test pins it.
+#: The forecast model looked 0.6–0.7 s shorter at 1–1.5 m over its first two weeks
+#: (n≈3400, September, small); recheck against months of `forecast_snapshots`.
+TYPICAL_PERIOD: tuple[tuple[float, float], ...] = (
+    (0.375, 6.5), (0.625, 6.5), (0.875, 6.9), (1.125, 7.5), (1.375, 7.8),
+    (1.625, 8.2), (1.875, 8.4), (2.125, 8.7), (2.375, 9.0), (2.625, 9.4),
+    (2.875, 9.7), (3.125, 10.0), (3.375, 10.1), (3.625, 10.4), (3.875, 10.5),
+    (4.125, 10.5), (4.375, 10.8), (4.625, 10.8), (4.875, 10.9), (5.125, 10.9),
+)
+
+
+def typical_period_s(height_m: float) -> float:
+    """The usual mean period for a swell this size here. Linear between bins, flat
+    beyond the ends."""
+    points = TYPICAL_PERIOD
+    if height_m <= points[0][0]:
+        return points[0][1]
+    for (h0, t0), (h1, t1) in zip(points, points[1:], strict=False):
+        if height_m <= h1:
+            return t0 + (t1 - t0) * (height_m - h0) / (h1 - h0)
+    return points[-1][1]
+
+
+def typical_equivalent_m(height_m: float, period_s: float) -> float:
+    """The height of a typical day that breaks like this one.
+
+    Solves `h * sqrt(typical_period_s(h)) == height_m * sqrt(period_s)`: equal breaking
+    height, the same square root as the fixed-reference version. The left side rises
+    strictly with `h`, so bisection always finds the one answer.
+    """
+    target = height_m * math.sqrt(max(period_s, 0.0))
+    lo, hi = 0.0, max(2 * height_m, 1.0)
+    while hi * math.sqrt(typical_period_s(hi)) < target:
+        hi *= 2
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        if mid * math.sqrt(typical_period_s(mid)) < target:
+            lo = mid
+        else:
+            hi = mid
+    found = (lo + hi) / 2
+    # A typical day must come back as itself, not as 0.44999… for 0.45, which would
+    # print as a different number from the incumbent's while meaning the same one.
+    return height_m if math.isclose(found, height_m, abs_tol=1e-9) else found
 
 
 def effective_height_m(hour: HourForecast, options: ScoreOptions = INCUMBENT) -> float:
     """The height the size gate judges: offshore height, or its period-aware stand-in."""
+    if options.size_period_typical:
+        return typical_equivalent_m(hour.swell_height_m, hour.swell_period_s)
     if options.size_ref_period_s is None:
         return hour.swell_height_m
     return hour.swell_height_m * math.sqrt(
@@ -114,30 +180,27 @@ def score_hour(
         )
 
     hs = effective_height_m(hour, options)
-    # Name both numbers when the period moved the height, so the sentence still explains
-    # the verdict: "0.9 m at 15 s breaks like 1.2 m, in range" is why a 1.0 m min passed.
-    adjusted = round(hs, 1) != round(hour.swell_height_m, 1)
-    lead = (
-        f"{hour.swell_height_m:.1f} m at {hour.swell_period_s:.0f} s breaks like {hs:.1f} m, "
-        if adjusted
-        else f"{hs:.1f} m "
-    )
     if hs < spot.size_min_m:
+        side = "below"
+    elif hs > spot.size_max_m:
+        side = "above"
+    else:
+        side = "in"
+    lead = _size_lead(hour, hs, side, options)
+    if side == "below":
         reasons.append(
             Reason(
                 code="size",
-                detail=f"{lead}{'' if adjusted else 'is '}below this spot's "
-                f"{spot.size_min_m:.1f} m min",
+                detail=f"{lead} below this spot's {spot.size_min_m:.1f} m min",
                 points=0,
             )
         )
         vetoed = True
-    elif hs > spot.size_max_m:
+    elif side == "above":
         reasons.append(
             Reason(
                 code="size",
-                detail=f"{lead}{'' if adjusted else 'looks like '}a close-out here "
-                f"(max {spot.size_max_m:.1f} m)",
+                detail=f"{lead} a close-out here (max {spot.size_max_m:.1f} m)",
                 points=0,
             )
         )
@@ -146,7 +209,7 @@ def score_hour(
         mid = (spot.size_min_m + spot.size_max_m) / 2
         closeness = 1 - abs(hs - mid) / max(mid - spot.size_min_m, 0.3)
         pts = 10 + int(15 * max(0.0, min(1.0, closeness)))
-        reasons.append(Reason(code="size", detail=f"{lead}in range", points=pts))
+        reasons.append(Reason(code="size", detail=f"{lead} in range", points=pts))
 
     if hour.swell_period_s + 0.05 < spot.period_min_s:
         short = spot.period_min_s - hour.swell_period_s
@@ -213,6 +276,40 @@ def score_hour(
         verdict=verdict_for(total, vetoed),
         reasons=reasons,
         vetoed=vetoed,
+    )
+
+
+def _shown(value: float, digits: int, side: str) -> str:
+    """A height as printed beside a verdict, rounded towards the side that explains it.
+
+    Ordinary rounding prints 0.76 m as "0.8 m is below this spot's 0.8 m min". Beside a
+    veto the number is rounded away from the limit, so what is shown never contradicts
+    what was decided.
+    """
+    scale = 10**digits
+    if side == "below":
+        value = math.floor(value * scale) / scale
+    elif side == "above":
+        value = math.ceil(value * scale) / scale
+    return f"{value:.{digits}f}"
+
+
+def _size_lead(hour: HourForecast, hs: float, side: str, options: ScoreOptions) -> str:
+    """The first half of the size sentence: the height, and what it breaks like.
+
+    Both numbers are named when the period moved the height, so the sentence still
+    explains the verdict: "1.1 m at 15 s breaks like 1.5 m, in range" is why a 1.2 m
+    minimum passed. Two decimals only where one would print the same number twice.
+    """
+    raw = hour.swell_height_m
+    if abs(hs - raw) < 0.01:
+        verb = {"below": "is", "above": "looks like", "in": ""}[side]
+        return f"{_shown(hs, 1, side)} m {verb}".rstrip()
+    digits = 2 if _shown(hs, 1, side) == f"{raw:.1f}" else 1
+    like = "a typical " if options.size_period_typical else ""
+    return (
+        f"{raw:.{digits}f} m at {hour.swell_period_s:.0f} s breaks like "
+        f"{like}{_shown(hs, digits, side)} m,"
     )
 
 

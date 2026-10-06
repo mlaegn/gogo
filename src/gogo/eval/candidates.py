@@ -44,27 +44,40 @@ Predictor = Callable[[Sample], float | None]
 # --- names ---------------------------------------------------------------------------
 
 
-def _reference_period(arg: str) -> ScoreOptions:
+def _reference_period(arg: str) -> tuple[str, ScoreOptions]:
+    if arg == "typical":
+        return arg, ScoreOptions(size_period_typical=True)
     try:
         seconds = float(arg)
     except ValueError:
-        raise ValueError(f"size_period wants seconds, got {arg!r}") from None
+        raise ValueError(
+            f"size_period wants seconds or 'typical', got {arg!r}"
+        ) from None
     # Mean period on this coast runs ~6–11 s (p10–p90 over the backfilled year). A
     # reference outside a generous band is a typo, not an experiment.
     if not 3.0 <= seconds <= 20.0:
         raise ValueError(f"size_period reference {seconds:g} s is outside 3–20 s")
-    return ScoreOptions(size_ref_period_s=seconds)
+    return f"{seconds:g}", ScoreOptions(size_ref_period_s=seconds)
 
 
-#: family -> how its argument becomes options. One entry per idea under test.
-FAMILIES: dict[str, Callable[[str], ScoreOptions]] = {
+#: family -> how its argument becomes (canonical argument, options). One entry per
+#: idea under test.
+FAMILIES: dict[str, Callable[[str], tuple[str, ScoreOptions]]] = {
     "size_period": _reference_period,
 }
 
-#: The sweep `make backtest-candidates` runs: the coast's p10, median, ~p75 and p90 of
-#: mean period. The square root is physics; which reference is right is what labels
-#: are for, so all four go in rather than one chosen by eye.
-SUGGESTED = ("size_period:6.5", "size_period:8.3", "size_period:10", "size_period:11.5")
+#: The sweep `make backtest-candidates` runs. Four fixed references — the coast's p10,
+#: median, ~p75 and p90 of mean period — and `typical`, which re-anchors each spot's
+#: range at the period usual for its height so only what period adds beyond height
+#: moves the gate. The square root is physics; which version is right is what labels
+#: are for, so all go in rather than one chosen by eye.
+SUGGESTED = (
+    "size_period:6.5",
+    "size_period:8.3",
+    "size_period:10",
+    "size_period:11.5",
+    "size_period:typical",
+)
 
 
 def parse(name: str) -> tuple[str, ScoreOptions]:
@@ -76,8 +89,8 @@ def parse(name: str) -> tuple[str, ScoreOptions]:
         raise ValueError(f"unknown candidate {name!r}; families are: {known}")
     if not sep or not arg:
         raise ValueError(f"candidate {name!r} needs an argument, e.g. {family}:8.3")
-    options = FAMILIES[family](arg)
-    return f"{family}:{float(arg):g}", options
+    canonical, options = FAMILIES[family](arg)
+    return f"{family}:{canonical}", options
 
 
 # --- with labels ---------------------------------------------------------------------
