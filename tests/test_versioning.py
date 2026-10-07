@@ -64,3 +64,17 @@ def test_every_spot_has_a_distinct_version():
     versions = {spot.id: spec_version(spot) for spot in spots}
     assert len(set(versions.values())) == len(spots)
     assert all(len(v) == 12 for v in versions.values())
+
+
+def test_an_unset_optional_field_leaves_the_version_alone():
+    """Adding `faces_deg` and `exposure` to Spot must not orphan every stored digest:
+    a spot that does not set them hashes exactly as it did before they existed."""
+    assert spec_version(_spot(faces_deg=None, exposure=None)) == "9cfd22ce1fe4"
+    assert "faces_deg" not in canonical_spec(_spot())
+
+
+def test_setting_geometry_changes_the_version():
+    unchanged = spec_version(_spot())
+    assert spec_version(_spot(faces_deg=260)) != unchanged
+    assert spec_version(_spot(exposure="sheltered")) != unchanged
+    assert spec_version(_spot(exposure="open")) != spec_version(_spot(exposure="sheltered"))

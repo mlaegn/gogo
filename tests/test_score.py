@@ -41,6 +41,36 @@ def test_spots_load():
     assert {s.region for s in spots} == {"ericeira", "lisbon", "peniche"}
 
 
+def test_every_spot_carries_its_measured_geometry():
+    """scripts/spot_geometry.py writes both for every spot; S13's taper will rely on it."""
+    for spot in load_spots():
+        assert spot.faces_deg is not None, spot.id
+        assert spot.exposure in ("open", "sheltered"), spot.id
+
+
+def test_the_measured_sheltered_spots():
+    """Land blocks over 20% of the year's swell energy at these. Pinned so a rerun of
+    the script that changes the list is a decision, not a side effect."""
+    sheltered = {s.id for s in load_spots() if s.exposure == "sheltered"}
+    assert sheltered == {
+        "carcavelos", "sao_pedro", "caparica", "supertubos", "consolacao", "lagide"
+    }
+
+
+def test_faces_deg_is_a_bearing():
+    with pytest.raises(ValueError):
+        by_id()["ribeira"].model_validate({**by_id()["ribeira"].model_dump(), "faces_deg": 360})
+
+
+def test_geometry_is_stored_not_scored_yet():
+    """Until the exposure taper lands as a candidate, these must not move a score."""
+    h = hour(swell_from_deg=315, swell_height_m=1.6, swell_period_s=11)
+    for spot in load_spots():
+        moved = spot.model_copy(update={"faces_deg": (spot.faces_deg + 90) % 360,
+                                        "exposure": "open"})
+        assert score_hour(moved, h) == score_hour(spot, h)
+
+
 def test_short_period_west_foz_beats_coxos():
     """Beach that accepts short period should outrank a reef that wants 10 s+."""
     spots = by_id()

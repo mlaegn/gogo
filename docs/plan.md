@@ -600,11 +600,39 @@ Each lands only if the backtest improves, or is neutral for a written reason.
   too since it touches text only: a height beside a veto is now rounded away from the
   limit, so 0.76 m prints as "0.7 m is below this spot's 0.8 m min" instead of "0.8 m".
 
+- [x] **S13b · Spot geometry, measured.** `faces_deg` and `exposure` on every spot,
+  from `scripts/spot_geometry.py` rather than from a map and an opinion. Facing is the
+  length-weighted shore normal of the OSM coastline within 0.5 km (OSM draws land on
+  the left, so a segment's seaward normal is its bearing + 90°), checked against the
+  obvious cases: Carcavelos faces 205° across the estuary, Guincho 290°. Exposure casts
+  a ray towards every 5° bearing the swell actually came from at the spot's marine cell
+  over the backfilled year, and counts it blocked when coastline lies 1–60 km out; over
+  20% of the H²T energy blocked is `sheltered`.
+
+  The split is wide, not marginal. All eight Ericeira spots, Guincho and Baleal lose
+  0–10%. Carcavelos 43%, São Pedro 84%, Caparica 43%, Supertubos 61%, Consolação 29%
+  and Lagide 73% — the Cascais coast shadows the first two, Cabo Raso the third, and the
+  Peniche peninsula the last three for north-west swell. Supertubos being sheltered
+  surprised; it is the geometry behind "Baleal works when Supertubos does not" (S15).
+
+  Stored, not scored: a test asserts rotating `faces_deg` moves no score. Optional on
+  `Spot` and left out of the hash when unset, so adding the fields orphaned nothing;
+  setting them gave every spot a new `spec_version`, which `spot_specs` records.
+
+  **For a human to look at, not for the script to decide:** Baleal's facing has
+  coherence 0.17 (its point sits on the tombolo where the shore turns), Empa's 0.53,
+  and Lagide's coordinates are 0.79 km from any coastline. And three hand-drawn windows
+  disagree with the geometry: Lagide faces 10° with a 250–330° window, São Lourenço
+  faces 260° with 300–20°, and Carcavelos's window reaches 300° though land 6–7 km out
+  blocks everything from 285°. A point or a wrap can explain each one; none should be
+  changed without a label or a look.
+
 - [ ] **S12** Daylight veto (a bug — ship regardless of the number) and continuous tide:
   height plus rate of change, replacing the three-phase proxy.
 - [ ] **S13** Per-spot face-height transfer, seeded from an analytic exposure factor off
   coastline orientation before anything is fitted. Period-aware size is built as a
-  candidate (S13a); exposure needs `faces_deg` and an open/sheltered flag per spot.
+  candidate (S13a); the geometry exposure needs is measured (S13b). Next: the taper,
+  as a candidate, on `open` spots only.
   Offshore `swell_wave_height` is not the wave at the beach, and today that difference
   hides inside `size_min_m`/`size_max_m`.
 - [ ] **S14** Multi-partition swell, directional spread, wind-sea ratio.

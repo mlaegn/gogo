@@ -1,6 +1,11 @@
 # Hand-curated. Windows are drafts — argue with a fixture, then edit here.
 # Directions are "from" in meteorological degrees (0 = N, 90 = E, 270 = W).
 # offshore_from: wind direction that is offshore at this spot.
+# faces_deg / exposure: measured, not judged — scripts/spot_geometry.py from the OSM
+#   coastline (2026-10-06) and a year of reanalysis swell. faces_deg is the shore
+#   normal, the swell direction that meets the beach square-on. exposure is sheltered
+#   when land blocks over 20% of the swell energy reaching the spot's marine cell.
+#   Rerun the script when a spot is added or its coordinates change.
 
 spots:
   - id: ribeira
@@ -19,6 +24,8 @@ spots:
     skill_min: intermediate
     skill_max: advanced
     crowd: high
+    faces_deg: 260
+    exposure: open
 
   - id: coxos
     name: Coxos
@@ -36,6 +43,8 @@ spots:
     skill_min: advanced
     skill_max: expert
     crowd: high
+    faces_deg: 265
+    exposure: open
 
   - id: foz_lizandro
     name: Foz do Lizandro
@@ -53,6 +62,8 @@ spots:
     skill_min: beginner
     skill_max: intermediate
     crowd: high
+    faces_deg: 290
+    exposure: open
 
   - id: sao_lourenco
     name: São Lourenço
@@ -70,6 +81,8 @@ spots:
     skill_min: advanced
     skill_max: expert
     crowd: medium
+    faces_deg: 260
+    exposure: open
 
   - id: pedra_branca
     name: Pedra Branca
@@ -87,6 +100,8 @@ spots:
     skill_min: intermediate
     skill_max: advanced
     crowd: medium
+    faces_deg: 275
+    exposure: open
 
   - id: empa
     name: Empa
@@ -104,6 +119,8 @@ spots:
     skill_min: beginner
     skill_max: intermediate
     crowd: medium
+    faces_deg: 255
+    exposure: open
 
   - id: furnas
     name: Furnas
@@ -121,6 +138,8 @@ spots:
     skill_min: advanced
     skill_max: expert
     crowd: medium
+    faces_deg: 285
+    exposure: open
 
   - id: sao_sebastiao
     name: São Sebastião
@@ -138,6 +157,8 @@ spots:
     skill_min: intermediate
     skill_max: advanced
     crowd: medium
+    faces_deg: 265
+    exposure: open
 
   - id: carcavelos
     name: Carcavelos
@@ -155,6 +176,8 @@ spots:
     skill_min: beginner
     skill_max: intermediate
     crowd: high
+    faces_deg: 205
+    exposure: sheltered
 
   - id: sao_pedro
     name: São Pedro do Estoril
@@ -172,6 +195,8 @@ spots:
     skill_min: intermediate
     skill_max: advanced
     crowd: medium
+    faces_deg: 200
+    exposure: sheltered
 
   - id: guincho
     name: Guincho
@@ -189,6 +214,8 @@ spots:
     skill_min: intermediate
     skill_max: expert
     crowd: medium
+    faces_deg: 290
+    exposure: open
 
   - id: caparica
     name: Costa da Caparica
@@ -206,6 +233,8 @@ spots:
     skill_min: beginner
     skill_max: intermediate
     crowd: high
+    faces_deg: 240
+    exposure: sheltered
 
   - id: supertubos
     name: Supertubos
@@ -223,6 +252,8 @@ spots:
     skill_min: advanced
     skill_max: expert
     crowd: high
+    faces_deg: 255
+    exposure: sheltered
 
   - id: baleal
     name: Baleal
@@ -240,6 +271,8 @@ spots:
     skill_min: beginner
     skill_max: advanced
     crowd: high
+    faces_deg: 315
+    exposure: open
 
   - id: consolacao
     name: Consolação
@@ -257,6 +290,8 @@ spots:
     skill_min: beginner
     skill_max: intermediate
     crowd: medium
+    faces_deg: 265
+    exposure: sheltered
 
   - id: lagide
     name: Lagide
@@ -274,3 +309,5 @@ spots:
     skill_min: intermediate
     skill_max: advanced
     crowd: medium
+    faces_deg: 10
+    exposure: sheltered

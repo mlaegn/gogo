@@ -179,9 +179,23 @@ depends on who "you" are — which is two different problems with two different 
 installed.
 
 ```bash
-make host-web                       # on the box: Postgres, worker, API
-make tunnel HOST=root@your.box      # on your laptop, leave it running
+make host-web      # on the box: Postgres, worker, API
+make tunnel        # on your laptop, leave it running
 ```
+
+`make tunnel` and `make import-host` default to an SSH host called `gogo`. Put the real
+address in your own `~/.ssh/config` rather than here — the repo is public, every tool
+that speaks SSH resolves the alias for free from any directory, and nothing in the repo
+has to know where the box is:
+
+```
+Host gogo
+  HostName <your box>
+  User root
+  ServerAliveInterval 60
+```
+
+Or pass `HOST=` on the command line if you call yours something else.
 
 Then `http://localhost:8088`. SSH is doing the encryption, so the cookie never crosses a
 network in clear. The reason to prefer this over running the page locally against a
@@ -219,7 +233,7 @@ not need it.
 make host                            # Postgres + worker
 make host-web                        # same, plus the page on 127.0.0.1:8000
 make host-public                     # same, plus Caddy and a certificate
-make tunnel HOST=root@your.box       # from your laptop: the page on localhost:8088
+make tunnel                          # from your laptop: the page on localhost:8088
 make backup                          # pg_dump to backups/
 ```
 
@@ -310,8 +324,8 @@ Onto the box, from your laptop, which is where labels belong — beside the fore
 history they have to be joined against:
 
 ```bash
-make import-host HOST=root@your.box FILE=sessions.csv          # dry run
-make import-host HOST=root@your.box FILE=sessions.csv WRITE=1  # for real
+make import-host FILE=sessions.csv          # dry run
+make import-host FILE=sessions.csv WRITE=1  # for real
 ```
 
 The file is deleted from the host and the container afterwards either way. It is

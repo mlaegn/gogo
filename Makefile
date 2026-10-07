@@ -60,11 +60,15 @@ phone:
 	GOGO_WEB_SECRET=$${GOGO_WEB_SECRET:-devkey} \
 		.venv/bin/uvicorn gogo.api:app --host 0.0.0.0 --app-dir src
 
+# An SSH alias, not an address — the real hostname belongs in your own ~/.ssh/config.
+# See "Reaching the page" in the README. Override with HOST= if yours differs.
+HOST ?= gogo
+
 # The deployed page, on this laptop, through SSH. The honest dev answer: no DNS, no
 # certificate, no account, nothing to install. SSH is the encryption, and what you log
 # lands in the box's database — the one with the forecast history — instead of starting
 # a second one here.
-#   make tunnel HOST=root@your.box
+#   make tunnel
 tunnel:
 	@echo "→ http://localhost:8088   (Ctrl-C to close)"
 	ssh -N -L 8088:127.0.0.1:8000 $(HOST)
@@ -74,8 +78,8 @@ tunnel:
 # the same-day pair count, which is the sample size of the headline metric, and names any
 # days with no reanalysis behind them.
 #
-#   make import-host HOST=root@your.box FILE=sessions.csv
-#   make import-host HOST=root@your.box FILE=sessions.csv WRITE=1
+#   make import-host FILE=sessions.csv
+#   make import-host FILE=sessions.csv WRITE=1
 #
 # Labels belong on the box, beside the forecast history they are joined against. Importing
 # into a laptop database splits the dataset across two machines from the first row.
@@ -84,7 +88,6 @@ tunnel:
 # location history, and it has no business outliving the import that read it.
 import-host:
 	@test -n "$(FILE)" || { echo "set FILE=path/to/sessions.csv"; exit 1; }
-	@test -n "$(HOST)" || { echo "set HOST=root@your.box"; exit 1; }
 	scp $(FILE) $(HOST):/tmp/gogo-import.csv
 	ssh $(HOST) 'cd /opt/gogo \
 	  && docker compose -f docker-compose.prod.yml cp /tmp/gogo-import.csv worker:/tmp/import.csv \

@@ -12,6 +12,9 @@ Skill = Literal["beginner", "intermediate", "advanced", "expert"]
 Crowd = Literal["low", "medium", "high"]
 Verdict = Literal["no", "maybe", "go"]
 Region = Literal["ericeira", "lisbon", "peniche"]
+#: Whether land stands between a spot and a meaningful share of the swell that reaches
+#: its marine cell. See `Spot.exposure`.
+Exposure = Literal["open", "sheltered"]
 
 # 'checked' is looked-at-and-did-not-surf: the only trace a wrong veto leaves.
 ObservationKind = Literal["surfed", "checked", "cam"]
@@ -40,6 +43,24 @@ class Spot(BaseModel):
     skill_min: Skill
     skill_max: Skill
     crowd: Crowd
+
+    # Geometry, measured from the OSM coastline by scripts/spot_geometry.py rather than
+    # judged by eye. Stored, not yet scored: S13's exposure taper is what will read them.
+    # Optional so that a spot without them keeps its spec_version (versioning leaves an
+    # unset field out of the hash), but every spot in coast.yml carries both.
+
+    #: The swell direction ("from", meteorological degrees) that meets the shoreline
+    #: square-on: the shore normal, pointing out to sea. Not the centre of the swell
+    #: window, and for sheltered spots the two can be far apart.
+    faces_deg: int | None = Field(default=None, ge=0, le=359)
+
+    #: `sheltered` when land within 60 km blocks a large share of the year's swell
+    #: arriving at the spot's marine cell (over 20% of its energy), so the offshore
+    #: height at that cell overstates the wave at the beach whenever the swell comes
+    #: from behind the headland. The taper S13 adds applies to `open` spots only: for a
+    #: sheltered one, opening the window gradually reopens exactly what the hand-drawn
+    #: window was closing on purpose.
+    exposure: Exposure | None = None
 
 
 class HourForecast(BaseModel):

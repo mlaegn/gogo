@@ -29,10 +29,14 @@ _EXCLUDED = frozenset({"id", "name"})
 
 
 def canonical_spec(spot: Spot) -> str:
+    # An unset optional field is left out rather than hashed as null. Adding a field to
+    # `Spot` must not change the version of every spot that does not use it — that
+    # would orphan each stored digest at once for a change that moved nothing. Setting
+    # it does change the version, as any behaviour-bearing field should.
     fields: dict[str, Any] = {
         key: value
         for key, value in spot.model_dump(mode="json").items()
-        if key not in _EXCLUDED
+        if key not in _EXCLUDED and value is not None
     }
     # The tide list is a set: [mid, high] and [high, mid] describe the same spot.
     tides = fields.get("tides")
