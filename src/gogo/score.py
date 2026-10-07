@@ -71,6 +71,17 @@ class ScoreOptions:
     #: moves the gate: long-period small swell up, short-period big windswell down.
     size_period_typical: bool = False
 
+    #: Direction taper (S13), on `open` spots only. Outside the window the swell is let
+    #: through for this many degrees past the nearest edge instead of being vetoed at
+    #: the first one: its height is scaled by cos(excess / width · 90°) — refraction
+    #: bends an oblique swell towards the shore and loses height doing it — and the
+    #: direction points fade from 10 to 0. Forecast direction is easily ±15° wrong, so
+    #: a hard edge mostly judges noise: under v2, 60–97% of direction-only vetoes were
+    #: within 15° of one. Two things keep it closed. A `sheltered` spot keeps its hard
+    #: window, because there the edge is a headland, not an angle. And a swell more
+    #: than 90° off `faces_deg` would be arriving from the land side of the beach.
+    dir_taper_deg: float | None = None
+
     def __post_init__(self) -> None:
         if self.size_ref_period_s is not None and self.size_period_typical:
             raise ValueError("size_ref_period_s and size_period_typical are exclusive")
@@ -150,18 +161,34 @@ def score_hour(
     )
     center = window_center(spot.swell_from_min, spot.swell_from_max)
     off_swell = angle_distance(hour.swell_from_deg, center)
+    wrap = 1.0
     if not swell_ok or off_swell > 90:
-        reasons.append(
-            Reason(
-                code="swell_dir",
-                detail=(
-                    f"swell {hour.swell_from_deg:.0f}° is outside "
-                    f"{spot.swell_from_min}–{spot.swell_from_max}°"
-                ),
-                points=0,
+        tapered = _wrapping_in(spot, hour, options)
+        if tapered is None:
+            reasons.append(
+                Reason(
+                    code="swell_dir",
+                    detail=(
+                        f"swell {hour.swell_from_deg:.0f}° is outside "
+                        f"{spot.swell_from_min}–{spot.swell_from_max}°"
+                    ),
+                    points=0,
+                )
             )
-        )
-        vetoed = True
+            vetoed = True
+        else:
+            excess, wrap = tapered
+            width = options.dir_taper_deg or 1.0
+            reasons.append(
+                Reason(
+                    code="swell_dir",
+                    detail=(
+                        f"swell {hour.swell_from_deg:.0f}° is {excess:.0f}° outside "
+                        f"{spot.swell_from_min}–{spot.swell_from_max}°, wrapping in"
+                    ),
+                    points=round(10 * (1 - excess / width)),
+                )
+            )
     elif off_swell <= 25:
         reasons.append(
             Reason(
@@ -179,14 +206,14 @@ def score_hour(
             )
         )
 
-    hs = effective_height_m(hour, options)
+    hs = effective_height_m(hour, options) * wrap
     if hs < spot.size_min_m:
         side = "below"
     elif hs > spot.size_max_m:
         side = "above"
     else:
         side = "in"
-    lead = _size_lead(hour, hs, side, options)
+    lead = _size_lead(hour, hs, side, options, wrapped=wrap < 1.0)
     if side == "below":
         reasons.append(
             Reason(
@@ -294,23 +321,50 @@ def _shown(value: float, digits: int, side: str) -> str:
     return f"{value:.{digits}f}"
 
 
-def _size_lead(hour: HourForecast, hs: float, side: str, options: ScoreOptions) -> str:
+def _size_lead(
+    hour: HourForecast, hs: float, side: str, options: ScoreOptions, wrapped: bool = False
+) -> str:
     """The first half of the size sentence: the height, and what it breaks like.
 
-    Both numbers are named when the period moved the height, so the sentence still
-    explains the verdict: "1.1 m at 15 s breaks like 1.5 m, in range" is why a 1.2 m
-    minimum passed. Two decimals only where one would print the same number twice.
+    Both numbers are named when the period or a wrapping direction moved the height, so
+    the sentence still explains the verdict: "1.1 m at 15 s breaks like 1.5 m, in range"
+    is why a 1.2 m minimum passed, and "1.6 m from 345° breaks like 1.2 m" is why a
+    swell outside the window still counts. Two decimals only where one would print the
+    same number twice.
     """
     raw = hour.swell_height_m
     if abs(hs - raw) < 0.01:
         verb = {"below": "is", "above": "looks like", "in": ""}[side]
         return f"{_shown(hs, 1, side)} m {verb}".rstrip()
     digits = 2 if _shown(hs, 1, side) == f"{raw:.1f}" else 1
-    like = "a typical " if options.size_period_typical else ""
-    return (
-        f"{raw:.{digits}f} m at {hour.swell_period_s:.0f} s breaks like "
-        f"{like}{_shown(hs, digits, side)} m,"
+    period_moved = options.size_ref_period_s is not None or options.size_period_typical
+    how = (f" at {hour.swell_period_s:.0f} s" if period_moved else "") + (
+        f" from {hour.swell_from_deg:.0f}°" if wrapped else ""
     )
+    like = "a typical " if options.size_period_typical else ""
+    return f"{raw:.{digits}f} m{how} breaks like {like}{_shown(hs, digits, side)} m,"
+
+
+def _wrapping_in(
+    spot: Spot, hour: HourForecast, options: ScoreOptions
+) -> tuple[float, float] | None:
+    """(degrees outside the window, height factor) when the taper lets this swell in.
+
+    None means the hard veto stands: no taper asked for, a sheltered spot or one with
+    no measured geometry, a swell from the land side, or one past the taper's width.
+    """
+    width = options.dir_taper_deg
+    if width is None or spot.exposure != "open" or spot.faces_deg is None:
+        return None
+    if angle_distance(hour.swell_from_deg, spot.faces_deg) >= 90:
+        return None
+    excess = min(
+        angle_distance(hour.swell_from_deg, spot.swell_from_min),
+        angle_distance(hour.swell_from_deg, spot.swell_from_max),
+    )
+    if excess >= width:
+        return None
+    return excess, math.cos(math.radians(90 * excess / width))
 
 
 def _wind(spot: Spot, hour: HourForecast) -> Reason:

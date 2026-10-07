@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from datetime import date, timedelta
 
 import psycopg
@@ -60,29 +60,43 @@ def _reference_period(arg: str) -> tuple[str, ScoreOptions]:
     return f"{seconds:g}", ScoreOptions(size_ref_period_s=seconds)
 
 
+def _taper_width(arg: str) -> tuple[str, ScoreOptions]:
+    try:
+        degrees = float(arg)
+    except ValueError:
+        raise ValueError(f"dir_taper wants degrees, got {arg!r}") from None
+    # Narrower than 5° is the hard edge again; wider than 90° reaches the land side.
+    if not 5.0 <= degrees <= 90.0:
+        raise ValueError(f"dir_taper width {degrees:g}° is outside 5–90°")
+    return f"{degrees:g}", ScoreOptions(dir_taper_deg=degrees)
+
+
 #: family -> how its argument becomes (canonical argument, options). One entry per
 #: idea under test.
 FAMILIES: dict[str, Callable[[str], tuple[str, ScoreOptions]]] = {
     "size_period": _reference_period,
+    "dir_taper": _taper_width,
 }
 
-#: The sweep `make backtest-candidates` runs. Four fixed references — the coast's p10,
-#: median, ~p75 and p90 of mean period — and `typical`, which re-anchors each spot's
-#: range at the period usual for its height so only what period adds beyond height
-#: moves the gate. The square root is physics; which version is right is what labels
-#: are for, so all go in rather than one chosen by eye.
+#: The sweep `make backtest-candidates` runs. Four fixed size references — the coast's
+#: p10, median, ~p75 and p90 of mean period — and `typical`, which re-anchors each
+#: spot's range at the period usual for its height. Two taper widths for open spots,
+#: and the taper with re-anchored size, since if both earn their place they would ship
+#: together. The physics fixes the shapes; which settings are right is what labels are
+#: for, so all go in rather than one chosen by eye.
 SUGGESTED = (
     "size_period:6.5",
     "size_period:8.3",
     "size_period:10",
     "size_period:11.5",
     "size_period:typical",
+    "dir_taper:30",
+    "dir_taper:45",
+    "dir_taper:45+size_period:typical",
 )
 
 
-def parse(name: str) -> tuple[str, ScoreOptions]:
-    """`family:arg` to (canonical name, options). The canonical name is what is
-    reported and stored, so `size_period:8.30` and `size_period:8.3` are one run."""
+def _parse_one(name: str) -> tuple[str, ScoreOptions]:
     family, sep, arg = name.partition(":")
     if family not in FAMILIES:
         known = ", ".join(sorted(FAMILIES))
@@ -91,6 +105,30 @@ def parse(name: str) -> tuple[str, ScoreOptions]:
         raise ValueError(f"candidate {name!r} needs an argument, e.g. {family}:8.3")
     canonical, options = FAMILIES[family](arg)
     return f"{family}:{canonical}", options
+
+
+def parse(name: str) -> tuple[str, ScoreOptions]:
+    """`family:arg`, or several joined by `+`, to (canonical name, options).
+
+    The canonical name is what is reported and stored, so `size_period:8.30` and
+    `size_period:8.3` are one run, and a combination is named in the order given.
+    Two parts that set the same option are refused rather than one silently winning.
+    """
+    names: list[str] = []
+    merged = INCUMBENT
+    for part in name.split("+"):
+        canonical, options = _parse_one(part)
+        changes = {
+            f.name: getattr(options, f.name)
+            for f in fields(ScoreOptions)
+            if getattr(options, f.name) != getattr(INCUMBENT, f.name)
+        }
+        clash = [k for k in changes if getattr(merged, k) != getattr(INCUMBENT, k)]
+        if clash:
+            raise ValueError(f"candidate {name!r} sets {', '.join(clash)} twice")
+        merged = replace(merged, **changes)
+        names.append(canonical)
+    return "+".join(names), merged
 
 
 # --- with labels ---------------------------------------------------------------------
