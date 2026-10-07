@@ -308,3 +308,72 @@ def test_re_anchored_long_period_still_counts_bigger_and_windswell_smaller():
 def test_the_two_period_options_are_exclusive():
     with pytest.raises(ValueError, match="exclusive"):
         ScoreOptions(size_ref_period_s=8.3, size_period_typical=True)
+
+
+# --- direction taper: a candidate, open spots only (S13) ----------------------------
+
+TAPER = ScoreOptions(dir_taper_deg=45)
+
+
+def _dir(spot_id: str, options: ScoreOptions, swell_from_deg: float, **kwargs):
+    s = score_hour(by_id()[spot_id], hour(swell_from_deg=swell_from_deg, **kwargs), options)
+    return s, {r.code: r for r in s.reasons}
+
+
+def test_just_outside_an_open_spots_window_wraps_in():
+    """Ribeira: window 250–330°, faces 260°. 345° is 15° past the edge and 85° off the
+    beach, so it arrives at about half height: sqrt(cos 85° / cos 70°)."""
+    incumbent, _ = _dir("ribeira", INCUMBENT, 345, swell_height_m=1.6, swell_period_s=11)
+    tapered, r = _dir("ribeira", TAPER, 345, swell_height_m=1.6, swell_period_s=11)
+    assert incumbent.vetoed
+    assert not tapered.vetoed
+    assert r["swell_dir"].points == 7
+    assert r["swell_dir"].detail == "swell 345° is 15° outside 250–330°, wrapping in"
+    assert r["size"].detail == "1.6 m from 345° breaks like 0.8 m, in range"
+
+
+def test_a_swell_nearer_the_shore_normal_than_the_edge_loses_nothing():
+    """São Lourenço faces 260° but its window starts at 300°. A 285° swell is more
+    square-on than the edge, so refraction costs it nothing — capped, never boosted."""
+    tapered, r = _dir("sao_lourenco", TAPER, 285, swell_height_m=1.6, swell_period_s=11)
+    assert not tapered.vetoed
+    assert r["size"].detail == "1.6 m in range"
+
+
+def test_past_the_taper_width_the_veto_stands():
+    tapered, r = _dir("ribeira", TAPER, 200, swell_height_m=1.6, swell_period_s=11)
+    assert tapered.vetoed and r["swell_dir"].points == 0
+
+
+def test_a_sheltered_spot_keeps_its_hard_window():
+    """Carcavelos's edge is the Cascais coast, not an angle to soften."""
+    tapered, _ = _dir("carcavelos", TAPER, 315, swell_height_m=1.6, swell_period_s=11)
+    assert tapered.vetoed
+
+
+def test_a_swell_from_the_land_side_stays_closed():
+    """São Lourenço's window ends at 20°; 40° is only 20° past it but 140° off a beach
+    facing 260°, so it would be coming over the land."""
+    tapered, _ = _dir("sao_lourenco", TAPER, 40, swell_height_m=1.6, swell_period_s=11)
+    assert tapered.vetoed
+
+
+def test_a_spot_without_measured_geometry_is_never_tapered():
+    spot = by_id()["ribeira"].model_copy(update={"faces_deg": None, "exposure": None})
+    assert score_hour(spot, hour(swell_from_deg=345), TAPER).vetoed
+
+
+def test_inside_the_window_the_taper_changes_nothing():
+    spots = load_spots()
+    for deg in range(0, 360, 5):
+        h = hour(swell_from_deg=deg, swell_height_m=1.4, swell_period_s=10)
+        for spot in spots:
+            incumbent = score_hour(spot, h)
+            if not any(r.code == "swell_dir" and r.points == 0 for r in incumbent.reasons):
+                assert score_hour(spot, h, TAPER) == incumbent, (spot.id, deg)
+
+
+def test_the_taper_composes_with_period_aware_size():
+    both = ScoreOptions(dir_taper_deg=45, size_period_typical=True)
+    _, r = _dir("ribeira", both, 345, swell_height_m=1.6, swell_period_s=14)
+    assert r["size"].detail.startswith("1.6 m at 14 s from 345° breaks like a typical")

@@ -56,9 +56,21 @@ def test_a_name_parses_to_options_and_a_canonical_name():
     )
 
 
+def test_a_taper_and_a_combination_parse():
+    assert cand.parse("dir_taper:45.0") == ("dir_taper:45", ScoreOptions(dir_taper_deg=45))
+    name, options = cand.parse("dir_taper:45+size_period:typical")
+    assert name == "dir_taper:45+size_period:typical"
+    assert options == ScoreOptions(dir_taper_deg=45, size_period_typical=True)
+
+
 @pytest.mark.parametrize(
     ("name", "message"),
     [
+        ("dir_taper:2", "outside 5–90°"),
+        ("dir_taper:wide", "wants degrees"),
+        ("size_period:8.3+size_period:10", "twice"),
+        ("size_period:8.3+size_period:typical", "exclusive"),
+        ("dir_taper:45+nope:1", "unknown candidate"),
         ("tide_magic:1", "unknown candidate"),
         ("size_period", "needs an argument"),
         ("size_period:", "needs an argument"),
@@ -175,6 +187,19 @@ def test_movement_sees_a_candidate_close_a_spot():
     assert m.headline_changed == 1
     assert m.disagreements == [(DAY, "ribeira", None)]
     assert m.incumbent_verdicts["no"] == 0 and m.candidate_verdicts["no"] == 1
+
+
+def test_movement_sees_the_taper_open_a_spot_just_outside_its_window():
+    """Foz faces 290° and its window ends at 320°; a 330° swell is closed today and
+    wraps in under the taper at nearly full height."""
+    spots = _spots("foz_lizandro")
+    conn = _conn()
+    with conn:
+        _hours(conn, spots, swell_from_deg=330.0)
+        moved = cand.movement(conn, spots, cand.options_for(["dir_taper:45"]))
+    m = moved["dir_taper:45"]
+    assert m.opened["foz_lizandro"] == 14 and m.closed["foz_lizandro"] == 0
+    assert m.disagreements == [(DAY, None, "foz_lizandro")]
 
 
 def test_movement_respects_the_date_range():

@@ -627,12 +627,40 @@ Each lands only if the backtest improves, or is neutral for a written reason.
   blocks everything from 285°. A point or a wrap can explain each one; none should be
   changed without a label or a look.
 
+- [x] **S13c · Direction taper, as a candidate.** `dir_taper:<width>`: on `open` spots,
+  a swell up to `width` degrees past the nearest window edge wraps in instead of being
+  vetoed, its direction points fading from 10 to 0 across the width. Sheltered spots keep
+  their hard windows, and a swell 90° or more off `faces_deg` stays closed, since it
+  would be arriving over the land — the first thing the measured geometry is used for.
+
+  **The height comes from refraction, not from a fade.** Over straight contours an
+  oblique swell keeps sqrt(cos α) of its height, α its angle off the shore normal, taken
+  relative to the window edge where the size range was written: 1 at the edge, 0
+  side-on, never above 1. Ribeira (faces 260°) at 345° keeps half — "1.6 m from 345°
+  breaks like 0.8 m" — while São Lourenço at 285°, more square-on than its own 300°
+  edge, loses nothing. A plain cosine over the width was tried first and discarded.
+
+  **What it moves over 380 stored days:** the headline on 51–53 days (13–14%) at 30° or
+  45°, against 182 for the naive all-spots taper measured before S13b existed, and
+  headline "no" days 19 → 13. Sheltered spots move nothing, by construction. Combined
+  with re-anchored size, `dir_taper:45+size_period:typical`, it moves 106 (28%).
+  Candidates now combine with `+`; two parts setting the same option are refused.
+
+  **And it found a spec question rather than a physics one.** The width barely matters
+  — 30° and 45° move the same hours — because nearly all of them sit just past an edge.
+  Foz (29% of hours opened), Empa (24%) and Pedra Branca (24%) all have windows ending at
+  320°, and 25% of the year's swell at the Ericeira cell comes from 320–335°: a drafted
+  edge through the second most common direction band. Refraction rightly costs little
+  there (Foz faces 290°; 330° keeps ~94%). Whether those beaches work on a 330° swell is
+  exactly what a `checked` label on such a day would answer, and the movement report
+  lists those days.
+
 - [ ] **S12** Daylight veto (a bug — ship regardless of the number) and continuous tide:
   height plus rate of change, replacing the three-phase proxy.
 - [ ] **S13** Per-spot face-height transfer, seeded from an analytic exposure factor off
   coastline orientation before anything is fitted. Period-aware size is built as a
-  candidate (S13a); the geometry exposure needs is measured (S13b). Next: the taper,
-  as a candidate, on `open` spots only.
+  candidate (S13a); the geometry is measured (S13b); the direction taper is a candidate
+  (S13c). What remains of S13 is labels: none of these ships without real pairs.
   Offshore `swell_wave_height` is not the wave at the beach, and today that difference
   hides inside `size_min_m`/`size_max_m`.
 - [ ] **S14** Multi-partition swell, directional spread, wind-sea ratio.

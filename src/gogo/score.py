@@ -73,13 +73,21 @@ class ScoreOptions:
 
     #: Direction taper (S13), on `open` spots only. Outside the window the swell is let
     #: through for this many degrees past the nearest edge instead of being vetoed at
-    #: the first one: its height is scaled by cos(excess / width · 90°) — refraction
-    #: bends an oblique swell towards the shore and loses height doing it — and the
-    #: direction points fade from 10 to 0. Forecast direction is easily ±15° wrong, so
-    #: a hard edge mostly judges noise: under v2, 60–97% of direction-only vetoes were
-    #: within 15° of one. Two things keep it closed. A `sheltered` spot keeps its hard
-    #: window, because there the edge is a headland, not an angle. And a swell more
-    #: than 90° off `faces_deg` would be arriving from the land side of the beach.
+    #: the first one, and the direction points fade from 10 to 0 across that width.
+    #: Forecast direction is easily ±15° wrong, so a hard edge mostly judges noise:
+    #: under v2, 60–97% of direction-only vetoes were within 15° of one.
+    #:
+    #: The height it lets through is cut by refraction, read off the measured shore
+    #: normal: over straight contours an oblique swell keeps sqrt(cos α) of its height,
+    #: α its angle off `faces_deg`. Taken relative to the window edge, where the spot's
+    #: size range was written, so the factor is 1 at the edge and falls to 0 as the
+    #: swell turns side-on. A plain cosine fade over the width was tried first and let
+    #: 23–29% of Foz, Empa and Pedra Branca's hours through, because their windows end
+    #: at 320° and the very common 330–340° swell is 65–85° oblique there.
+    #:
+    #: Closed regardless: a `sheltered` spot keeps its hard window, because there the
+    #: edge is a headland, not an angle; and a swell 90° or more off `faces_deg` would
+    #: be arriving from the land side.
     dir_taper_deg: float | None = None
 
     def __post_init__(self) -> None:
@@ -351,20 +359,27 @@ def _wrapping_in(
     """(degrees outside the window, height factor) when the taper lets this swell in.
 
     None means the hard veto stands: no taper asked for, a sheltered spot or one with
-    no measured geometry, a swell from the land side, or one past the taper's width.
+    no measured geometry, a swell from the land side, one past the taper's width, or a
+    nearest edge that itself lies side-on to the beach, where there is nothing to
+    measure the refraction against.
     """
     width = options.dir_taper_deg
     if width is None or spot.exposure != "open" or spot.faces_deg is None:
         return None
-    if angle_distance(hour.swell_from_deg, spot.faces_deg) >= 90:
+    off_normal = angle_distance(hour.swell_from_deg, spot.faces_deg)
+    if off_normal >= 90:
         return None
-    excess = min(
-        angle_distance(hour.swell_from_deg, spot.swell_from_min),
-        angle_distance(hour.swell_from_deg, spot.swell_from_max),
-    )
+    to_min = angle_distance(hour.swell_from_deg, spot.swell_from_min)
+    to_max = angle_distance(hour.swell_from_deg, spot.swell_from_max)
+    excess = min(to_min, to_max)
     if excess >= width:
         return None
-    return excess, math.cos(math.radians(90 * excess / width))
+    edge = spot.swell_from_min if to_min <= to_max else spot.swell_from_max
+    edge_cos = math.cos(math.radians(angle_distance(edge, spot.faces_deg)))
+    if edge_cos <= 0:
+        return None
+    factor = math.sqrt(math.cos(math.radians(off_normal)) / edge_cos)
+    return excess, min(1.0, factor)
 
 
 def _wind(spot: Spot, hour: HourForecast) -> Reason:
