@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from gogo.geo import angle_distance, in_bearing_window, window_center
+from gogo.geo import angle_delta, angle_distance, in_bearing_window, window_center
 from gogo.models import HourForecast, HourScore, Reason, Spot, Verdict
 
 # Bump on any change that can move a rank: weights, thresholds, gates, new terms, or the
@@ -89,6 +89,24 @@ class ScoreOptions:
     #: edge is a headland, not an angle; and a swell 90° or more off `faces_deg` would
     #: be arriving from the land side.
     dir_taper_deg: float | None = None
+
+    #: Shadow of the land (S15, first half): how fast a swell's height falls off as it
+    #: comes from further into the lee of a headland, in degrees at a 10 s period. Uses
+    #: the measured `shadow_sectors`. Shaped on diffraction past the end of a barrier:
+    #: half the height reaches the geometric shadow boundary, it decays exponentially
+    #: into the lee and recovers the same way on the open side. Scaled with period,
+    #: because the angle a wave spreads into a shadow goes with its wavelength's square
+    #: root, i.e. with T: a 14 s groundswell bends 40% further round Peniche than a 10 s
+    #: one, which is why Supertubos wants long north-west swell. Refraction over the
+    #: shelf also bends swell round a headland and is not modelled separately; the rate
+    #: absorbs it, which is why it is a setting for the backtest rather than a constant.
+    #: Below `LEE_FLOOR` of the height the direction is vetoed. Applies at every spot
+    #: with measured sectors, open or sheltered — Baleal sits in the lee of Peniche from
+    #: the south-west whatever its overall exposure. It only ever cuts height, which
+    #: closes hours in the lee and can open exactly one kind: a close-out. A swell too
+    #: big for the open beaches can be the right size behind the headland, which is the
+    #: substitution S15 is after ("too big here, go round the peninsula").
+    shadow_deg: float | None = None
 
     def __post_init__(self) -> None:
         if self.size_ref_period_s is not None and self.size_period_typical:
@@ -213,6 +231,26 @@ def score_hour(
                 points=10,
             )
         )
+
+    lee = None if vetoed else _in_the_lee(spot, hour, options)
+    if lee is not None:
+        last = reasons[-1]
+        if lee < LEE_FLOOR:
+            reasons[-1] = Reason(
+                code="swell_dir",
+                detail=(
+                    f"swell {hour.swell_from_deg:.0f}° is in the lee of land here, "
+                    f"about {lee:.0%} gets in"
+                ),
+                points=0,
+            )
+            vetoed = True
+        else:
+            wrap *= lee
+            if lee < 0.9:
+                reasons[-1] = last.model_copy(
+                    update={"detail": f"{last.detail}; in the lee of land, ~{lee:.0%} gets in"}
+                )
 
     hs = effective_height_m(hour, options) * wrap
     if hs < spot.size_min_m:
@@ -351,6 +389,46 @@ def _size_lead(
     )
     like = "a typical " if options.size_period_typical else ""
     return f"{raw:.{digits}f} m{how} breaks like {like}{_shown(hs, digits, side)} m,"
+
+
+#: Below this share of its height, a swell from the lee of the land is a veto.
+LEE_FLOOR = 0.15
+
+
+def _in_the_lee(spot: Spot, hour: HourForecast, options: ScoreOptions) -> float | None:
+    """The share of the swell's height the land lets through, or None if not asked or
+    nothing is measured.
+
+    The swell is treated as coming from a spread of directions around its bearing — a
+    two-sided exponential whose width is `shadow_deg` scaled by period — and the share
+    is the part of that spread with a clear path to open sea, i.e. not inside a shadow
+    sector. Against one long headland this is exactly the diffraction shape: half at the
+    geometric shadow boundary, decaying into the lee and recovering on the open side.
+    Against a small island it stays small, because the island blocks only a sliver of
+    the spread — the Berlengas, 15 km off Baleal and a few degrees wide, cannot put
+    Baleal in the dark. An arc start 88° or more anticlockwise of the facing, or an end
+    as far clockwise, was cut by the scan rather than by open sea, so the arc is taken
+    to run on into the land side there.
+    """
+    if options.shadow_deg is None or not spot.shadow_sectors or spot.faces_deg is None:
+        return None
+    scale = options.shadow_deg * max(hour.swell_period_s, 1.0) / 10.0
+
+    def cdf(u: float) -> float:
+        return 0.5 * math.exp(u / scale) if u < 0 else 1.0 - 0.5 * math.exp(-u / scale)
+
+    blocked = 0.0
+    for start, end in spot.shadow_sectors:
+        lo = angle_delta(start, hour.swell_from_deg)
+        hi = lo + (end - start) % 360
+        # The scan runs from 89° anticlockwise of the facing to 89° clockwise of it, so
+        # only a start can be cut at the first limit and only an end at the second.
+        if angle_delta(start, spot.faces_deg) <= -88:
+            lo -= 90
+        if angle_delta(end, spot.faces_deg) >= 88:
+            hi += 90
+        blocked += cdf(hi) - cdf(lo)
+    return max(0.0, min(1.0, 1.0 - blocked))
 
 
 def _wrapping_in(

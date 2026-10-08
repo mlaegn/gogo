@@ -56,6 +56,14 @@ def test_a_name_parses_to_options_and_a_canonical_name():
     )
 
 
+def test_the_whole_physics_candidate_parses():
+    name, options = cand.parse("dir_taper:45+shadow:20+size_period:typical")
+    assert name == "dir_taper:45+shadow:20+size_period:typical"
+    assert options == ScoreOptions(
+        dir_taper_deg=45, shadow_deg=20, size_period_typical=True
+    )
+
+
 def test_a_taper_and_a_combination_parse():
     assert cand.parse("dir_taper:45.0") == ("dir_taper:45", ScoreOptions(dir_taper_deg=45))
     name, options = cand.parse("dir_taper:45+size_period:typical")
@@ -67,6 +75,8 @@ def test_a_taper_and_a_combination_parse():
     ("name", "message"),
     [
         ("dir_taper:2", "outside 5–90°"),
+        ("shadow:1", "outside 2–60°"),
+        ("shadow:deep", "wants degrees"),
         ("dir_taper:wide", "wants degrees"),
         ("size_period:8.3+size_period:10", "twice"),
         ("size_period:8.3+size_period:typical", "exclusive"),

@@ -56,7 +56,7 @@ tests/fixtures/          # golden weekends
 Dockerfile               # one image: worker default, uvicorn for the page
 docker-compose.prod.yml  # VPS: unpublished Postgres + worker; --profile web for the page
 scripts/backup.sh        # nightly pg_dump into backups/
-scripts/spot_geometry.py # faces_deg / exposure for coast.yml, from the OSM coastline
+scripts/spot_geometry.py # faces_deg / exposure / shadow_sectors for coast.yml, from the OSM coastline
 ```
 
 ## How to work

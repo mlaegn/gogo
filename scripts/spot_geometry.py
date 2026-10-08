@@ -1,6 +1,6 @@
 """Measure each spot's facing direction and exposure from the OpenStreetMap coastline.
 
-Where `faces_deg` and `exposure` in coast.yml come from, so they can be re-derived
+Where `faces_deg`, `exposure` and `shadow_sectors` in coast.yml come from, so they can be re-derived
 rather than argued about. Prints a table and the YAML lines to paste; it never edits
 coast.yml, which stays hand-curated.
 
@@ -21,6 +21,11 @@ the backfilled year. A bearing is *blocked* when the ray meets coastline between
 is weighted by swell energy, H²T. Over `SHELTERED_SHARE` the spot is `sheltered`: the
 offshore height at its cell overstates the wave at the beach whenever the swell comes
 from behind the land.
+
+**Shadow sectors.** The same rays at every whole degree within 90° of the facing,
+merged into arcs: the bearings from which land stands between the spot and the open
+sea. Arcs narrower than `MIN_SECTOR_DEG` are dropped as coastline noise. The score's
+`shadow` candidate reads these to cut a swell's height by how far into the lee it comes.
 
 Pure Python on purpose: numpy is not a dependency of this project, and a few seconds is
 fast enough for something run when a spot is added or moved.
@@ -52,6 +57,7 @@ OFFSHORE_KM = 0.3
 MIN_HIT_KM = 1.0
 REACH_KM = 60.0
 SHELTERED_SHARE = 0.20
+MIN_SECTOR_DEG = 3
 
 LAT0, LON0 = 39.0, -9.4
 KX, KY = 111.32 * math.cos(math.radians(LAT0)), 110.57
@@ -146,6 +152,51 @@ def first_hit(segs, ox, oy, bearing) -> float | None:
     return best
 
 
+def blocked_bearings(segs, ox, oy, bearings) -> set[int]:
+    """Whole-degree bearings whose ray meets coastline between MIN_HIT_KM and REACH_KM.
+
+    Segments are bucketed by the degrees they subtend from the origin first, so each ray
+    tests only what lies in its direction — a few hundred segments, not tens of
+    thousands.
+    """
+    buckets: dict[int, list] = defaultdict(list)
+    for seg in segs:
+        x1, y1, x2, y2 = seg
+        if min(math.hypot(x1 - ox, y1 - oy), math.hypot(x2 - ox, y2 - oy)) > REACH_KM:
+            continue
+        a1 = math.degrees(math.atan2(x1 - ox, y1 - oy)) % 360
+        a2 = math.degrees(math.atan2(x2 - ox, y2 - oy)) % 360
+        lo, span = (a1, (a2 - a1) % 360) if (a2 - a1) % 360 <= 180 else (a2, (a1 - a2) % 360)
+        for k in range(int(span) + 2):
+            buckets[int(lo + k) % 360].append(seg)
+            buckets[int(lo + k - 1) % 360].append(seg)
+    out = set()
+    for bearing in bearings:
+        hit = first_hit(buckets.get(bearing % 360, []), ox, oy, bearing)
+        if hit is not None and hit >= MIN_HIT_KM:
+            out.add(bearing % 360)
+    return out
+
+
+def sectors(blocked: set[int], face: float) -> list[list[int]]:
+    """Merge blocked whole degrees within 90° of the facing into [from, to] arcs, read
+    clockwise like a swell window. Narrow arcs are dropped as noise."""
+    start = int(round(face)) - 89
+    run: list[int] = []
+    arcs: list[list[int]] = []
+    for k in range(179):
+        bearing = (start + k) % 360
+        if bearing in blocked:
+            run.append(bearing)
+            continue
+        if len(run) >= MIN_SECTOR_DEG:
+            arcs.append([run[0], run[-1]])
+        run = []
+    if len(run) >= MIN_SECTOR_DEG:
+        arcs.append([run[0], run[-1]])
+    return arcs
+
+
 def swell_by_cell():
     """{cell: {bearing bin: (hours, energy)}} from the backfilled reanalysis."""
     from gogo.store import connection
@@ -195,10 +246,14 @@ def main() -> int:
         exposure = None if share is None else (
             "sheltered" if share > SHELTERED_SHARE else "open"
         )
-        rows.append((spot, round(face / 5) * 5 % 360, coherence, distance, share, exposure))
+        half_plane = range(int(round(face)) - 89, int(round(face)) + 90)
+        arcs = sectors(blocked_bearings(segs, ox, oy, half_plane), face)
+        rows.append(
+            (spot, round(face / 5) * 5 % 360, coherence, distance, share, exposure, arcs)
+        )
 
     print(f"{'spot':14s} {'faces':>5s} {'coh':>5s} {'to coast':>8s} {'blocked':>8s}  exposure")
-    for spot, face, coherence, distance, share, exposure in rows:
+    for spot, face, coherence, distance, share, exposure, _ in rows:
         flag = "  <- check on a map" if coherence < 0.6 or distance > 0.5 else ""
         blocked = "n/a" if share is None else f"{share:.0%}"
         print(
@@ -206,8 +261,12 @@ def main() -> int:
             f"{exposure or 'n/a'}{flag}"
         )
     print("\n# coast.yml")
-    for spot, face, _, _, _, exposure in rows:
-        print(f"{spot.id}: faces_deg: {face}" + (f", exposure: {exposure}" if exposure else ""))
+    for spot, face, _, _, _, exposure, arcs in rows:
+        print(
+            f"{spot.id}: faces_deg: {face}"
+            + (f", exposure: {exposure}" if exposure else "")
+            + f", shadow_sectors: {arcs}"
+        )
     return 0
 
 

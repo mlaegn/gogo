@@ -655,6 +655,36 @@ Each lands only if the backtest improves, or is neutral for a written reason.
   exactly what a `checked` label on such a day would answer, and the movement report
   lists those days.
 
+- [x] **S15a · The land's shadow, as a candidate.** `scripts/spot_geometry.py` now also
+  writes `shadow_sectors`: the arcs, within 90° of the facing, from which coastline
+  1–60 km out stands between a spot and the open sea. They read right against a map —
+  the Peniche peninsula over Baleal from 226–269° and over Supertubos from 299°, the
+  Cascais coast over Carcavelos from 281°, the Berlengas as a 6° sliver off Baleal.
+
+  `shadow:<deg>` cuts a swell's height by the share of its spread of directions that
+  has a clear path to open sea: a two-sided exponential around its bearing, `deg` wide at
+  10 s and scaling with period, since the angle a wave bends into a shadow goes with
+  its wavelength's square root. Against one long headland that is exactly the
+  diffraction shape — half at the shadow boundary, decaying into the lee — and against a
+  small island it stays small. The first version measured to the nearest boundary and
+  let the Berlengas take 46% off Baleal; it was replaced. Under 15% gets in, the
+  direction is vetoed. An arc end cut by the scan, not by open sea, runs on into the
+  land side; a bug here once let a 3° arc at Foz's scan limit sweep a shadow over 280°.
+
+  It cuts height, so it closes hours in the lee and opens exactly one kind: close-outs
+  (a test sweeps every spot, direction and size and finds no other). A swell too big
+  for the open beaches arrives the right size behind the headland — S15's substitution,
+  falling out of the geometry rather than being written in.
+
+  **What it moves, over 403 days on the box:** 110 / 128 / 154 headline changes
+  (27 / 32 / 38%) at 10° / 20° / 30°, the biggest bet of any candidate, and headline
+  "no" days 19 → 11–14. Nearly all of it at the spots the hand windows let shadowed
+  swell into: at 20°, Carcavelos, São Pedro, Supertubos and Lagide each lose 19–23% of
+  their surfable hours and gain 3–8% back as close-outs that now fit; the open
+  Ericeira spots move under 2%. Whether Supertubos really is that much smaller on a
+  310° swell is the question; Supertubos and Baleal on the same north-west morning is
+  the pair that answers it.
+
 - [ ] **S12** Daylight veto (a bug — ship regardless of the number) and continuous tide:
   height plus rate of change, replacing the three-phase proxy.
 - [ ] **S13** Per-spot face-height transfer, seeded from an analytic exposure factor off
@@ -666,6 +696,8 @@ Each lands only if the backtest improves, or is neutral for a written reason.
 - [ ] **S14** Multi-partition swell, directional spread, wind-sea ratio.
 - [ ] **S15** Spot-facing normal in `coast.yml` → shadowing and substitution
   ("too big here, go round the peninsula"). Baleal works when Supertubos does not.
+  Facing and shadow sectors are measured (S13b, S15a) and shadowing is a candidate;
+  substitution as a ranked suggestion is still to build.
 - [ ] **S16** Personalization: profile, travel time, crowd penalty. Ranking becomes
   *utility*, not quality — a 75 at Baleal loses to a 68 at Carcavelos before work.
 - [ ] **S17** Ensemble spread as displayed uncertainty. Surfline's single star cannot do

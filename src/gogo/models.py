@@ -62,6 +62,20 @@ class Spot(BaseModel):
     #: window was closing on purpose.
     exposure: Exposure | None = None
 
+    #: Arcs of "from" bearings, read clockwise like the swell window, from which land
+    #: stands between the spot and the open sea (1–60 km out), within 90° of the facing.
+    #: An arc ending 89° off `faces_deg` was cut at the edge of the scan, so that end is
+    #: not a shadow boundary. Empty means nothing in the way. Read by the `shadow`
+    #: candidate only.
+    shadow_sectors: list[tuple[int, int]] | None = None
+
+    @model_validator(mode="after")
+    def _sectors_are_bearings(self) -> Spot:
+        for start, end in self.shadow_sectors or []:
+            if not (0 <= start <= 359 and 0 <= end <= 359):
+                raise ValueError(f"shadow sector {start}–{end} is not a pair of bearings")
+        return self
+
 
 class HourForecast(BaseModel):
     """One hour at one spot, as the score sees it.

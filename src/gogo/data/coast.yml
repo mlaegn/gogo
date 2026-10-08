@@ -5,6 +5,8 @@
 #   coastline (2026-10-06) and a year of reanalysis swell. faces_deg is the shore
 #   normal, the swell direction that meets the beach square-on. exposure is sheltered
 #   when land blocks over 20% of the swell energy reaching the spot's marine cell.
+# shadow_sectors: from the same script — arcs of "from" bearings, read clockwise, from
+#   which land 1–60 km out blocks the open sea, within 90° of faces_deg.
 #   Rerun the script when a spot is added or its coordinates change.
 
 spots:
@@ -26,6 +28,7 @@ spots:
     crowd: high
     faces_deg: 260
     exposure: open
+    shadow_sectors: [[179, 196]]
 
   - id: coxos
     name: Coxos
@@ -45,6 +48,7 @@ spots:
     crowd: high
     faces_deg: 265
     exposure: open
+    shadow_sectors: [[176, 193]]
 
   - id: foz_lizandro
     name: Foz do Lizandro
@@ -64,6 +68,7 @@ spots:
     crowd: high
     faces_deg: 290
     exposure: open
+    shadow_sectors: [[199, 201], [351, 14]]
 
   - id: sao_lourenco
     name: São Lourenço
@@ -83,6 +88,7 @@ spots:
     crowd: medium
     faces_deg: 260
     exposure: open
+    shadow_sectors: [[191, 194]]
 
   - id: pedra_branca
     name: Pedra Branca
@@ -102,6 +108,7 @@ spots:
     crowd: medium
     faces_deg: 275
     exposure: open
+    shadow_sectors: [[186, 197], [356, 4]]
 
   - id: empa
     name: Empa
@@ -121,6 +128,7 @@ spots:
     crowd: medium
     faces_deg: 255
     exposure: open
+    shadow_sectors: [[168, 199]]
 
   - id: furnas
     name: Furnas
@@ -140,6 +148,7 @@ spots:
     crowd: medium
     faces_deg: 285
     exposure: open
+    shadow_sectors: [[3, 16]]
 
   - id: sao_sebastiao
     name: São Sebastião
@@ -159,6 +168,7 @@ spots:
     crowd: medium
     faces_deg: 265
     exposure: open
+    shadow_sectors: [[175, 197]]
 
   - id: carcavelos
     name: Carcavelos
@@ -178,6 +188,7 @@ spots:
     crowd: high
     faces_deg: 205
     exposure: sheltered
+    shadow_sectors: [[118, 161], [281, 296]]
 
   - id: sao_pedro
     name: São Pedro do Estoril
@@ -197,6 +208,7 @@ spots:
     crowd: medium
     faces_deg: 200
     exposure: sheltered
+    shadow_sectors: [[110, 156], [269, 288]]
 
   - id: guincho
     name: Guincho
@@ -216,6 +228,7 @@ spots:
     crowd: medium
     faces_deg: 290
     exposure: open
+    shadow_sectors: [[339, 19]]
 
   - id: caparica
     name: Costa da Caparica
@@ -235,6 +248,7 @@ spots:
     crowd: high
     faces_deg: 240
     exposure: sheltered
+    shadow_sectors: [[149, 178], [292, 327]]
 
   - id: supertubos
     name: Supertubos
@@ -254,6 +268,7 @@ spots:
     crowd: high
     faces_deg: 255
     exposure: sheltered
+    shadow_sectors: [[164, 189], [299, 342]]
 
   - id: baleal
     name: Baleal
@@ -273,6 +288,7 @@ spots:
     crowd: high
     faces_deg: 315
     exposure: open
+    shadow_sectors: [[226, 269], [284, 289], [301, 303]]
 
   - id: consolacao
     name: Consolação
@@ -292,6 +308,7 @@ spots:
     crowd: medium
     faces_deg: 265
     exposure: sheltered
+    shadow_sectors: [[174, 190], [306, 311], [316, 352]]
 
   - id: lagide
     name: Lagide
@@ -311,3 +328,4 @@ spots:
     crowd: medium
     faces_deg: 10
     exposure: sheltered
+    shadow_sectors: [[285, 317], [40, 99]]

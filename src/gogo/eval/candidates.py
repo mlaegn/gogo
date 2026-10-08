@@ -71,19 +71,32 @@ def _taper_width(arg: str) -> tuple[str, ScoreOptions]:
     return f"{degrees:g}", ScoreOptions(dir_taper_deg=degrees)
 
 
+def _shadow_scale(arg: str) -> tuple[str, ScoreOptions]:
+    try:
+        degrees = float(arg)
+    except ValueError:
+        raise ValueError(f"shadow wants degrees, got {arg!r}") from None
+    # Under 2° the lee is a cliff again; over 60° it smears a headland over a quadrant.
+    if not 2.0 <= degrees <= 60.0:
+        raise ValueError(f"shadow scale {degrees:g}° is outside 2–60°")
+    return f"{degrees:g}", ScoreOptions(shadow_deg=degrees)
+
+
 #: family -> how its argument becomes (canonical argument, options). One entry per
 #: idea under test.
 FAMILIES: dict[str, Callable[[str], tuple[str, ScoreOptions]]] = {
     "size_period": _reference_period,
     "dir_taper": _taper_width,
+    "shadow": _shadow_scale,
 }
 
 #: The sweep `make backtest-candidates` runs. Four fixed size references — the coast's
 #: p10, median, ~p75 and p90 of mean period — and `typical`, which re-anchors each
-#: spot's range at the period usual for its height. Two taper widths for open spots,
-#: and the taper with re-anchored size, since if both earn their place they would ship
-#: together. The physics fixes the shapes; which settings are right is what labels are
-#: for, so all go in rather than one chosen by eye.
+#: spot's range at the period usual for its height. Two taper widths for open spots.
+#: Three rates for the land's shadow, which only ever cuts. And everything at once,
+#: since if each earns its place they would ship together. The physics fixes the
+#: shapes; which settings are right is what labels are for, so all go in rather than
+#: one chosen by eye.
 SUGGESTED = (
     "size_period:6.5",
     "size_period:8.3",
@@ -93,6 +106,10 @@ SUGGESTED = (
     "dir_taper:30",
     "dir_taper:45",
     "dir_taper:45+size_period:typical",
+    "shadow:10",
+    "shadow:20",
+    "shadow:30",
+    "dir_taper:45+shadow:20+size_period:typical",
 )
 
 

@@ -377,3 +377,109 @@ def test_the_taper_composes_with_period_aware_size():
     both = ScoreOptions(dir_taper_deg=45, size_period_typical=True)
     _, r = _dir("ribeira", both, 345, swell_height_m=1.6, swell_period_s=14)
     assert r["size"].detail.startswith("1.6 m at 14 s from 345° breaks like a typical")
+
+
+# --- the land's shadow: a candidate, every spot with measured sectors (S15) ---------
+
+SHADOW = ScoreOptions(shadow_deg=10)
+
+
+def _lee(spot_id: str, deg: float, period: float = 11.0, options: ScoreOptions = SHADOW):
+    s = score_hour(
+        by_id()[spot_id],
+        hour(swell_from_deg=deg, swell_height_m=1.6, swell_period_s=period, wind_speed_kn=3),
+        options,
+    )
+    return s, {r.code: r for r in s.reasons}
+
+
+def test_every_spot_carries_its_shadow_sectors():
+    for spot in load_spots():
+        assert spot.shadow_sectors is not None, spot.id
+
+
+def test_half_the_height_reaches_the_shadow_boundary():
+    """Carcavelos: the Cascais coast blocks everything from 281°. At the boundary the
+    diffraction shape lets half through, so 1.6 m arrives like 0.8 m."""
+    _, r = _lee("carcavelos", 281)
+    assert "~50% gets in" in r["swell_dir"].detail
+    assert r["size"].detail == "1.6 m from 281° breaks like 0.8 m, in range"
+
+
+def test_deep_in_the_lee_a_swell_inside_the_hand_window_is_closed():
+    """Carcavelos's window runs to 300°, but 290° comes from behind land: the
+    disagreement S13b flagged, now a number."""
+    incumbent, _ = _lee("carcavelos", 290, options=INCUMBENT)
+    shadowed, r = _lee("carcavelos", 290)
+    assert not incumbent.vetoed
+    assert shadowed.vetoed
+    assert "below this spot's 0.6 m min" in r["size"].detail
+
+
+def test_long_period_bends_further_into_the_lee():
+    _, short = _lee("supertubos", 310, period=10)
+    _, long = _lee("supertubos", 310, period=16)
+    share = lambda r: int(r["swell_dir"].detail.rsplit("~", 1)[1].split("%")[0])  # noqa: E731
+    assert share(long) > share(short)
+
+
+def test_below_the_floor_the_direction_itself_is_vetoed():
+    """Baleal from 250° is deep in the lee of the Peniche peninsula."""
+    shadowed, r = _lee("baleal", 250)
+    assert shadowed.vetoed
+    assert r["swell_dir"].points == 0
+    assert r["swell_dir"].detail.startswith("swell 250° is in the lee of land here")
+
+
+def test_a_small_island_casts_a_small_shadow():
+    """The Berlengas are a few degrees wide, 15 km off Baleal. They block a sliver of
+    the swell's spread, not the swell."""
+    shadowed, _ = _lee("baleal", 286)
+    assert not shadowed.vetoed
+
+
+def test_far_from_any_shadow_nothing_changes():
+    for spot_id, deg in (("ribeira", 290), ("guincho", 280), ("foz_lizandro", 280)):
+        assert _lee(spot_id, deg)[0].score >= _lee(spot_id, deg, options=INCUMBENT)[0].score - 1
+
+
+def test_the_shadow_opens_only_close_outs():
+    """It only cuts height, so the one thing it can open is a swell too big for the
+    spot: the substitution S15 wants, "too big here, go round the peninsula"."""
+    opened = 0
+    for spot in load_spots():
+        for deg in range(0, 360, 5):
+            for height in (0.8, 1.4, 2.5, 3.5, 5.0):
+                h = hour(swell_from_deg=deg, swell_height_m=height, swell_period_s=12)
+                before = score_hour(spot, h)
+                if before.vetoed and not score_hour(spot, h, SHADOW).vetoed:
+                    opened += 1
+                    closed_by = {r.code: r.detail for r in before.reasons if r.points == 0}
+                    assert set(closed_by) == {"size"}, (spot.id, deg, height)
+                    assert "close-out" in closed_by["size"], (spot.id, deg, height)
+    assert opened, "a big swell in the lee of a headland should open somewhere"
+
+
+def test_a_swell_too_big_for_the_open_coast_fits_in_the_lee():
+    """5 m from 310° closes Supertubos out at its offshore height. From behind the
+    Peniche peninsula it arrives a fraction of that size."""
+    big = dict(swell_from_deg=310, swell_height_m=5.0, swell_period_s=15, wind_speed_kn=3)
+    assert score_hour(by_id()["supertubos"], hour(**big)).vetoed
+    assert not score_hour(by_id()["supertubos"], hour(**big), ScoreOptions(shadow_deg=20)).vetoed
+
+
+def test_an_arc_at_the_edge_of_the_scan_stays_where_it_is():
+    """Foz's 199–201° arc sits at the anticlockwise limit of its scan. Only its start
+    runs on into the land side; its end must not sweep the shadow round to 280°."""
+    shadowed, r = _lee("foz_lizandro", 280)
+    assert not shadowed.vetoed
+    assert "lee" not in r["swell_dir"].detail
+
+
+def test_a_clipped_arc_end_is_not_a_way_out_of_the_lee():
+    """Carcavelos's arc ends at 296° only because the scan stops 89° off its facing.
+    Treating that end as open sea would let 295° out of the lee; it must stay deep in."""
+    _, near_clip = _lee("carcavelos", 295)
+    assert "about" in near_clip["swell_dir"].detail or "~" in near_clip["swell_dir"].detail
+    shadowed, _ = _lee("carcavelos", 295)
+    assert shadowed.vetoed
