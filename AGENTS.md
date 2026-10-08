@@ -4,7 +4,7 @@ Personal surf go / no-go planner. Lisbon–Ericeira–Peniche only.
 
 Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Streamlit, RAG, or IPMA-as-primary.
 
-`docs/plan.md` is the current contract. Read it before starting work: it says which slice is next and why. Community input is training signal for the score, not a feed.
+`docs/plan.md` is the current contract. Read it before starting work: it says which slice is next and why. It is git-ignored — private notes on the maintainer's machine, never in the public repo — so a fresh clone does not have it. Community input is training signal for the score, not a feed.
 
 ## Frozen decisions
 
@@ -39,7 +39,7 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 ## Layout
 
 ```text
-docs/plan.md             # the contract — which slice is next
+docs/plan.md             # the contract — which slice is next (git-ignored, local only)
 src/gogo/data/coast.yml  # the content — edit here first
 src/gogo/score.py        # pure, tested
 src/gogo/schemas.py      # the wire format; the client's types are generated from it

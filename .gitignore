@@ -16,6 +16,9 @@ backups/
 sessions.csv
 sessions*.csv
 *-sessions.csv
+# The working plan is private notes, not documentation: it records how and where this
+# runs. It stays on the maintainer's machine.
+docs/plan.md
 web/node_modules/
 web/dist/
 # Vite output and the schema it is generated from: both derived, both rebuilt by

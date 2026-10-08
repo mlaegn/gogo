@@ -55,9 +55,8 @@ history now accumulates on its own. Labels are the bottleneck, and the only one.
 
 Thesis [`surfreporter`](https://github.com/MaximilianLae/surfreporter) is reference only.
 
-Where this is going: [`docs/plan.md`](docs/plan.md). Short version — locals' post-session
-feedback becomes training signal for the score, not a social feed, and no score change
-lands without a backtest number.
+Where this is going, in short: locals' post-session feedback becomes training signal for
+the score, not a social feed, and no score change lands without a backtest number.
 
 ## How it works
 
