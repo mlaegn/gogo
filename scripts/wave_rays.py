@@ -4,7 +4,7 @@ Offline analysis, run by hand. Needs the `eval` dependency group (numpy), which 
 worker and API images never install:
 
     uv run --group eval python scripts/wave_rays.py nazare     # the validation
-    uv run --group eval python scripts/wave_rays.py spots      # per-spot transfer
+    uv run --group eval python scripts/wave_rays.py spots      # writes src/gogo/data/rays.json
 
 **The physics.** A wave slows down as the water shallows, and a long wave feels the
 bottom sooner. Linear theory gives the speed from the depth h and period T through the
@@ -41,6 +41,7 @@ which is what bends swell; it does not resolve individual sandbars, which move a
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import struct
 import sys
@@ -389,9 +390,90 @@ def nazare(seabed: Seabed) -> list[Check]:
     ]
 
 
+# --- every spot ----------------------------------------------------------------------
+
+PERIODS = (6, 8, 10, 12, 14, 16, 18)
+DIRECTIONS = tuple(range(0, 360, 5))
+#: Periods actually traced. A "12 s swell" carries energy across roughly 10–14 s, and
+#: over the Tagus-mouth banks the focusing lines move with period: traced at one period
+#: the factor jumps (Caparica, 300°: 0.60 / 0.32 / 0.67 at 8 / 10 / 14 s, unchanged at
+#: five times the rays, so not sampling noise). Energy adds across frequencies, so
+#: each tabulated period is the energy average over a spread around it.
+TRACED_PERIODS = tuple(range(5, 21))
+#: Relative width of that spread, a standard deviation: narrow-band swell.
+PERIOD_SPREAD = 0.12
+#: Places traced for the knowledge checks that are not spots: (lat, lon, facing).
+PROBES = {
+    "_probe_praia_grande": (38.815, -9.476, 280.0),
+}
+
+
+def beach_point(seabed: Seabed, lat: float, lon: float, faces: float) -> tuple[float, float]:
+    """10 m of water straight out from the beach. A spot's coordinates can sit on the
+    sand or already out in the bay (Lagide's are 0.8 km off), so walk back towards the
+    shore while the water is deep, then out along the facing to 10 m."""
+    x, y = seabed.xy(lat, lon)
+    ux, uy = math.sin(math.radians(faces)), math.cos(math.radians(faces))
+    for _ in range(150):
+        h = _sample(seabed.depth, np.array([x / seabed.dx]), np.array([y / seabed.dy]))[0]
+        if h < START_DEPTH_M:
+            break
+        x, y = x - 20.0 * ux, y - 20.0 * uy
+    lat2, lon2 = seabed.latlon(x, y)
+    return start_point(seabed, lat2, lon2, faces)
+
+
+def spot_tables(seabed: Seabed) -> dict:
+    from gogo.spots import load_spots
+
+    places = {s.id: (s.lat, s.lon, float(s.faces_deg)) for s in load_spots()}
+    places.update(PROBES)
+    fields = {t: field(seabed, t) for t in TRACED_PERIODS}
+    out = {}
+    for name, (lat, lon, faces) in places.items():
+        x0, y0 = beach_point(seabed, lat, lon, faces)
+        energy = {}
+        for t in TRACED_PERIODS:
+            fan = trace(fields[t], x0, y0, step_deg=0.5)
+            energy[t] = np.array([refraction(fan, t, d) ** 2 for d in DIRECTIONS])
+        rows = []
+        for t in PERIODS:
+            weights = {u: math.exp(-0.5 * ((u - t) / (PERIOD_SPREAD * t)) ** 2) for u in energy}
+            total = sum(weights.values())
+            mean = sum(w * energy[u] for u, w in weights.items()) / total
+            rows.append([round(float(v), 3) for v in np.sqrt(mean)])
+        slat, slon = seabed.latlon(x0, y0)
+        out[name] = {"start": [round(slat, 5), round(slon, 5)], "kr": rows}
+        print(f"  {name:22s} from {slat:.4f}, {slon:.4f}", file=sys.stderr)
+    return out
+
+
+def write_tables(seabed: Seabed, path: Path) -> None:
+    table = {
+        "about": (
+            "Refraction factor from the open sea to 10 m of water off each spot, by "
+            "period (rows) and swell direction (columns). scripts/wave_rays.py spots."
+        ),
+        "seabed": "EMODnet Bathymetry mean, 1/16 arc-minute",
+        "smoothing_m": SMOOTH_M,
+        "spread_s": SPREAD_S,
+        "period_spread": PERIOD_SPREAD,
+        "start_depth_m": START_DEPTH_M,
+        "periods": list(PERIODS),
+        "directions": list(DIRECTIONS),
+        "spots": spot_tables(seabed),
+    }
+    path.write_text(json.dumps(table, separators=(",", ":")) + "\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("what", choices=["nazare"])
+    parser.add_argument("what", choices=["nazare", "spots"])
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "src" / "gogo" / "data" / "rays.json",
+    )
     parser.add_argument("--cache", type=Path, default=Path.home() / ".cache" / "gogo-bathy")
     args = parser.parse_args()
     seabed = load_seabed(args.cache)
@@ -405,6 +487,9 @@ def main() -> int:
         for check in checks:
             print(f"{'PASS' if check.passed else 'FAIL'}  {check.name}: {check.detail}")
         return 0 if all(c.passed for c in checks) else 1
+    if args.what == "spots":
+        write_tables(seabed, args.out)
+        print(f"wrote {args.out}", file=sys.stderr)
     return 0
 
 

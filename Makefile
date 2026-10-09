@@ -104,7 +104,8 @@ backtest:
 
 # Stage 3: the period-aware size gate at four reference periods and re-anchored at the
 # period typical for each height; the direction taper on open spots at two widths, and
-# combined with re-anchored size; the land's shadow at three rates; and all of it.
+# combined with re-anchored size; the land's shadow at three rates; all of it; and the
+# traced seabed, alone and with re-anchored size.
 # Each against the incumbent on the same rows, plus what each would move across every
 # stored day. Same list as candidates.SUGGESTED.
 backtest-candidates:
@@ -115,7 +116,9 @@ backtest-candidates:
 	  --candidate dir_taper:30 --candidate dir_taper:45 \
 	  --candidate dir_taper:45+size_period:typical \
 	  --candidate shadow:10 --candidate shadow:20 --candidate shadow:30 \
-	  --candidate dir_taper:45+shadow:20+size_period:typical
+	  --candidate dir_taper:45+shadow:20+size_period:typical \
+	  --candidate rays --candidate rays:size \
+	  --candidate rays+size_period:typical --candidate rays:size+size_period:typical
 
 # The wave ray tracer against the real Nazaré canyon: long swell must focus on Praia do
 # Norte, short swell must not, the open coast must stay plain. Exit 1 if any fails.

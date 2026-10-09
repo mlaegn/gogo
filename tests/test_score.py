@@ -483,3 +483,88 @@ def test_a_clipped_arc_end_is_not_a_way_out_of_the_lee():
     assert "about" in near_clip["swell_dir"].detail or "~" in near_clip["swell_dir"].detail
     shadowed, _ = _lee("carcavelos", 295)
     assert shadowed.vetoed
+
+
+# --- the traced seabed: a candidate standing in for window, taper and shadow (S13e) --
+
+RAYS = ScoreOptions(rays=True)
+
+
+def _rays(spot_id: str, deg: float, period: float = 12.0, options: ScoreOptions = RAYS):
+    s = score_hour(
+        by_id()[spot_id],
+        hour(swell_from_deg=deg, swell_height_m=1.6, swell_period_s=period, wind_speed_kn=3),
+        options,
+    )
+    return s, {r.code: r for r in s.reasons}
+
+
+def test_rays_replace_the_taper_and_the_shadow():
+    with pytest.raises(ValueError, match="rays replaces"):
+        ScoreOptions(rays=True, shadow_deg=20)
+    with pytest.raises(ValueError, match="rays replaces"):
+        ScoreOptions(rays=True, dir_taper_deg=45)
+
+
+def test_rays_put_carcavelos_in_the_lee_of_nw_swell_and_leave_guincho_alone():
+    carcavelos, r = _rays("carcavelos", 300)
+    guincho, g = _rays("guincho", 300)
+    assert carcavelos.vetoed
+    assert "wraps in at ~24%" in r["swell_dir"].detail
+    assert not guincho.vetoed
+    assert g["swell_dir"].detail == "swell 300° reaches here in full"
+
+
+def test_the_best_direction_is_the_anchor_so_it_reaches_in_full():
+    """Lagide's window is 250–330° but the seabed says it faces north: anchored to
+    the best direction, a north swell is its full size and a west one about half."""
+    north, n = _rays("lagide", 345)
+    west, w = _rays("lagide", 250)
+    assert n["swell_dir"].detail == "swell 345° reaches here in full"
+    assert "~49%" in w["swell_dir"].detail
+
+
+def test_rays_do_not_read_the_hand_window():
+    spot = by_id()["ribeira"]
+    moved = spot.model_copy(update={"swell_from_min": 10, "swell_from_max": 40})
+    h = hour(swell_from_deg=300, swell_height_m=1.6, swell_period_s=12)
+    assert score_hour(moved, h, RAYS) == score_hour(spot, h, RAYS)
+
+
+def test_a_spot_without_a_table_keeps_its_window():
+    spot = by_id()["ribeira"].model_copy(update={"id": "nowhere"})
+    h = hour(swell_from_deg=345, swell_height_m=1.6, swell_period_s=12)
+    assert score_hour(spot, h, RAYS) == score_hour(spot, h)
+
+
+def test_a_swell_that_barely_arrives_is_a_direction_veto():
+    shadowed, r = _rays("caparica", 345)
+    assert shadowed.vetoed
+    assert r["swell_dir"].points == 0
+    assert "barely reaches here" in r["swell_dir"].detail
+
+
+def test_a_focused_swell_names_its_direction():
+    _, r = _rays("supertubos", 270)
+    assert "from 270°" in r["size"].detail
+
+
+RAYS_SIZE = ScoreOptions(rays=True, rays_keep_window=True)
+
+
+def test_rays_for_size_keep_the_window_for_direction():
+    """Ribeira from 345°: the rays say it arrives in full, the window says no. With
+    rays:size the window wins on direction."""
+    full, _ = _rays("ribeira", 345)
+    size_only, _ = _rays("ribeira", 345, options=RAYS_SIZE)
+    assert not full.vetoed
+    assert size_only.vetoed
+
+
+def test_rays_for_size_still_shrink_a_sheltered_swell_inside_the_window():
+    """Carcavelos's window takes 300°, but a third of that swell arrives: the size gate
+    closes it."""
+    shut, r = _rays("carcavelos", 300, options=RAYS_SIZE)
+    assert shut.vetoed
+    assert "below this spot's 0.6 m min" in r["size"].detail
+    assert r["swell_dir"].points > 0, "direction itself is the window's call, and it passed"

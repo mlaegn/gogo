@@ -58,6 +58,7 @@ docker-compose.prod.yml  # VPS: unpublished Postgres + worker; --profile web for
 scripts/backup.sh        # nightly pg_dump into backups/
 scripts/spot_geometry.py # faces_deg / exposure / shadow_sectors for coast.yml, from the OSM coastline
 scripts/wave_rays.py     # wave rays over the EMODnet seabed; `make nazare` validates it (eval group)
+src/gogo/data/rays.json  # traced refraction per spot; regenerate with `wave_rays.py spots` when a spot moves
 ```
 
 ## How to work

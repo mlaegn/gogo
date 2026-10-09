@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import functools
 import math
 from dataclasses import dataclass
 
 from gogo.geo import angle_delta, angle_distance, in_bearing_window, window_center
 from gogo.models import HourForecast, HourScore, Reason, Spot, Verdict
+from gogo.rays import factor, load_tables
 
 # Bump on any change that can move a rank: weights, thresholds, gates, new terms, or the
 # rule that aggregates hours into a window. A stored verdict is meaningless without it.
@@ -108,9 +110,33 @@ class ScoreOptions:
     #: substitution S15 is after ("too big here, go round the peninsula").
     shadow_deg: float | None = None
 
+    #: Wave rays over the real seabed (S13e). The hand-drawn window, the taper and the
+    #: fitted shadow are all stand-ins for one physical quantity: how much of an open-sea
+    #: swell refraction delivers to the spot, by direction and period. `data/rays.json`
+    #: holds it, traced over EMODnet bathymetry by `scripts/wave_rays.py` and checked
+    #: against the Nazaré canyon and sixteen things locals know about these spots. With
+    #: this on, that factor decides the direction and scales the height, and the hand
+    #: window is not read at all. The factor is taken relative to the spot's best
+    #: direction at the period typical for the middle of its size range, so the size
+    #: range keeps meaning what it was written to mean: offshore height on the kind of
+    #: swell the spot is known for. Excludes the taper and the shadow, which it replaces.
+    rays: bool = False
+
+    #: Rays for size only: the traced factor scales the height, but the hand window
+    #: still decides direction. Rays measure energy arriving, not whether it breaks
+    #: well — a point needs swell lined up with it, a bank closes out on the wrong
+    #: angle — and a window encodes that as well as the shelter. With `rays` alone
+    #: over a year, a third of the swell at the Ericeira cell (320–20°) opened beaches
+    #: whose windows end at 320°, and headline "no" days fell from 19 to 3.
+    rays_keep_window: bool = False
+
     def __post_init__(self) -> None:
         if self.size_ref_period_s is not None and self.size_period_typical:
             raise ValueError("size_ref_period_s and size_period_typical are exclusive")
+        if self.rays and (self.dir_taper_deg is not None or self.shadow_deg is not None):
+            raise ValueError("rays replaces dir_taper and shadow; use one or the other")
+        if self.rays_keep_window and not self.rays:
+            raise ValueError("rays_keep_window needs rays")
 
 
 INCUMBENT = ScoreOptions()
@@ -188,7 +214,22 @@ def score_hour(
     center = window_center(spot.swell_from_min, spot.swell_from_max)
     off_swell = angle_distance(hour.swell_from_deg, center)
     wrap = 1.0
-    if not swell_ok or off_swell > 90:
+    traced = _rays(spot, hour, options)
+    if traced is not None and options.rays_keep_window:
+        # The window decides direction below; the rays only scale the height, and a
+        # swell that barely arrives is still closed.
+        reason, wrap = traced
+        if reason.points == 0:
+            reasons.append(reason)
+            vetoed = True
+            traced = None
+    if traced is not None and not options.rays_keep_window:
+        reason, wrap = traced
+        reasons.append(reason)
+        vetoed = reason.points == 0
+    elif vetoed:
+        pass
+    elif not swell_ok or off_swell > 90:
         tapered = _wrapping_in(spot, hour, options)
         if tapered is None:
             reasons.append(
@@ -259,7 +300,7 @@ def score_hour(
         side = "above"
     else:
         side = "in"
-    lead = _size_lead(hour, hs, side, options, wrapped=wrap < 1.0)
+    lead = _size_lead(hour, hs, side, options, wrapped=abs(wrap - 1.0) > 0.005)
     if side == "below":
         reasons.append(
             Reason(
@@ -393,6 +434,42 @@ def _size_lead(
 
 #: Below this share of its height, a swell from the lee of the land is a veto.
 LEE_FLOOR = 0.15
+
+
+@functools.cache
+def _best_factor(spot_id: str, period: float) -> float:
+    """The most any direction delivers to the spot at this period: its best swell.
+
+    The anchor the size range is read against. Not the window's centre: where a drafted
+    window disagrees with the seabed — Lagide faces north with a 250–330° window — the
+    centre can be a poor direction, and every other one would look like a gain."""
+    table = load_tables()[spot_id]
+    return max(factor(table, d, period) for d in table.directions)
+
+
+def _rays(spot: Spot, hour: HourForecast, options: ScoreOptions) -> tuple[Reason, float] | None:
+    """The direction reason and height factor from the traced table, or None when the
+    option is off or the spot has no table."""
+    if not options.rays:
+        return None
+    table = load_tables().get(spot.id)
+    if table is None:
+        return None
+    here = factor(table, hour.swell_from_deg, hour.swell_period_s)
+    best = _best_factor(spot.id, typical_period_s((spot.size_min_m + spot.size_max_m) / 2))
+    share = min(here / best, 1.5) if best > 0 else 0.0
+    deg = f"swell {hour.swell_from_deg:.0f}°"
+    if share < LEE_FLOOR:
+        return Reason(
+            code="swell_dir",
+            detail=f"{deg} barely reaches here, ~{share:.0%} of what its best swell does",
+            points=0,
+        ), share
+    if share >= 0.9:
+        detail = f"{deg} reaches here in full"
+    else:
+        detail = f"{deg} wraps in at ~{share:.0%} of what its best swell does"
+    return Reason(code="swell_dir", detail=detail, points=round(20 * min(1.0, share))), share
 
 
 def _in_the_lee(spot: Spot, hour: HourForecast, options: ScoreOptions) -> float | None:

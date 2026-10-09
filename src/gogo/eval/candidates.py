@@ -82,18 +82,33 @@ def _shadow_scale(arg: str) -> tuple[str, ScoreOptions]:
     return f"{degrees:g}", ScoreOptions(shadow_deg=degrees)
 
 
+def _rays(arg: str) -> tuple[str, ScoreOptions]:
+    """`rays` lets the traced seabed decide direction and size; `rays:size` keeps the
+    hand window for direction and uses the rays for size only."""
+    if arg == "":
+        return "", ScoreOptions(rays=True)
+    if arg == "size":
+        return "size", ScoreOptions(rays=True, rays_keep_window=True)
+    raise ValueError(f"rays takes nothing or 'size', got {arg!r}")
+
+
+#: Families that are complete without an argument.
+BARE = frozenset({"rays"})
+
 #: family -> how its argument becomes (canonical argument, options). One entry per
 #: idea under test.
 FAMILIES: dict[str, Callable[[str], tuple[str, ScoreOptions]]] = {
     "size_period": _reference_period,
     "dir_taper": _taper_width,
     "shadow": _shadow_scale,
+    "rays": _rays,
 }
 
 #: The sweep `make backtest-candidates` runs. Four fixed size references — the coast's
 #: p10, median, ~p75 and p90 of mean period — and `typical`, which re-anchors each
 #: spot's range at the period usual for its height. Two taper widths for open spots.
-#: Three rates for the land's shadow, which only ever cuts. And everything at once,
+#: Three rates for the land's shadow. The traced seabed, alone and with re-anchored
+#: size, which stands in for the window, taper and shadow at once. And everything at once,
 #: since if each earns its place they would ship together. The physics fixes the
 #: shapes; which settings are right is what labels are for, so all go in rather than
 #: one chosen by eye.
@@ -110,6 +125,10 @@ SUGGESTED = (
     "shadow:20",
     "shadow:30",
     "dir_taper:45+shadow:20+size_period:typical",
+    "rays",
+    "rays:size",
+    "rays+size_period:typical",
+    "rays:size+size_period:typical",
 )
 
 
@@ -118,6 +137,9 @@ def _parse_one(name: str) -> tuple[str, ScoreOptions]:
     if family not in FAMILIES:
         known = ", ".join(sorted(FAMILIES))
         raise ValueError(f"unknown candidate {name!r}; families are: {known}")
+    if family in BARE:
+        canonical, options = FAMILIES[family](arg)
+        return f"{family}:{canonical}" if canonical else family, options
     if not sep or not arg:
         raise ValueError(f"candidate {name!r} needs an argument, e.g. {family}:8.3")
     canonical, options = FAMILIES[family](arg)

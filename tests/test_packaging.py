@@ -24,6 +24,15 @@ def test_the_spot_file_lives_inside_the_package():
     assert load_spots()
 
 
+def test_the_ray_tables_live_inside_the_package():
+    """The score reads them at runtime; an installed wheel has no scripts/ to remake
+    them, so they must travel with the code like coast.yml."""
+    from gogo import rays
+
+    assert rays.PATH.parent.parent == Path(gogo.__file__).parent
+    assert rays.load_tables(), "rays.json is missing or empty"
+
+
 def test_the_migrations_live_inside_the_package():
     assert MIGRATIONS_DIR.is_relative_to(PACKAGE)
     files = migration_files()

@@ -64,6 +64,16 @@ def test_the_whole_physics_candidate_parses():
     )
 
 
+def test_rays_parse_bare_and_combined():
+    assert cand.parse("rays") == ("rays", ScoreOptions(rays=True))
+    assert cand.parse("rays:size") == (
+        "rays:size", ScoreOptions(rays=True, rays_keep_window=True)
+    )
+    assert cand.parse("rays+size_period:typical") == (
+        "rays+size_period:typical", ScoreOptions(rays=True, size_period_typical=True)
+    )
+
+
 def test_a_taper_and_a_combination_parse():
     assert cand.parse("dir_taper:45.0") == ("dir_taper:45", ScoreOptions(dir_taper_deg=45))
     name, options = cand.parse("dir_taper:45+size_period:typical")
@@ -76,6 +86,8 @@ def test_a_taper_and_a_combination_parse():
     [
         ("dir_taper:2", "outside 5–90°"),
         ("shadow:1", "outside 2–60°"),
+        ("rays:fine", "takes nothing or 'size'"),
+        ("rays+shadow:20", "rays replaces"),
         ("shadow:deep", "wants degrees"),
         ("dir_taper:wide", "wants degrees"),
         ("size_period:8.3+size_period:10", "twice"),
