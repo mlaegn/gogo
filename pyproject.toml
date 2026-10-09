@@ -21,6 +21,9 @@ gogo = "gogo.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8.3"]
+eval = [  # offline analysis only: never in the worker or API image (Dockerfile: --no-dev)
+    "numpy>=2.0",
+]
 
 [build-system]
 requires = ["hatchling"]

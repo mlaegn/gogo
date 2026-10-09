@@ -1,5 +1,5 @@
 .PHONY: install test weekend weekend-live weekend-db fetch backfill api web phone up down \
-	migrate ui ui-deps ui-dev ui-types openapi host host-web host-public backup health tunnel import-host backtest backtest-candidates
+	migrate ui ui-deps ui-dev ui-types openapi host host-web host-public backup health tunnel import-host backtest backtest-candidates nazare
 
 # Python only, on purpose: the score, the worker and the tests must stay installable
 # without a Node toolchain. `make ui` is the frontend's entry point.
@@ -116,6 +116,12 @@ backtest-candidates:
 	  --candidate dir_taper:45+size_period:typical \
 	  --candidate shadow:10 --candidate shadow:20 --candidate shadow:30 \
 	  --candidate dir_taper:45+shadow:20+size_period:typical
+
+# The wave ray tracer against the real Nazaré canyon: long swell must focus on Praia do
+# Norte, short swell must not, the open coast must stay plain. Exit 1 if any fails.
+# Downloads the EMODnet seabed once (~9 MB, cached). Needs the eval group (numpy).
+nazare:
+	uv run --group eval python scripts/wave_rays.py nazare
 
 # Is the forecast fresh and is every spot still ranked? Exit 1 if not.
 health:
