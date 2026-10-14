@@ -2,7 +2,7 @@ import math
 from datetime import datetime, timedelta
 
 from gogo.clock import UTC
-from gogo.tide import TIDE_CONTEXT, attach_tide
+from gogo.tide import SEA_LEVEL_LEAD, TIDE_CONTEXT, attach_tide
 
 START = datetime(2026, 8, 26, 0, 0, tzinfo=UTC)
 M2_HOURS = 12.42
@@ -89,3 +89,28 @@ def test_an_edge_hour_is_judged_against_a_whole_cycle():
     times = _hours(30, START + timedelta(hours=3))
     tagged = attach_tide(times, _spring_neap(times))
     assert tagged[times[0]] == ("mid", "outgoing")
+
+
+def test_open_meteo_is_read_thirty_two_minutes_back():
+    """Measured against the official tide at Cascais and Peniche (scripts/tide_check.py):
+    Open-Meteo's highs and lows come 32 minutes early. Fed a tide that runs exactly that
+    early, the corrected phases must match the on-time tide, where uncorrected ones do
+    not on about a quarter of hours."""
+    assert SEA_LEVEL_LEAD == timedelta(minutes=32)
+    week = _hours(8 * 24)
+    on_time = _spring_neap(week)
+    early = _spring_neap([t + SEA_LEVEL_LEAD for t in week])
+    truth = attach_tide(week, on_time, lead=timedelta())
+    corrected = attach_tide(week, early)
+    raw = attach_tide(week, early, lead=timedelta())
+    inner = week[24:-24]
+    agree = sum(corrected[t][0] == truth[t][0] for t in inner) / len(inner)
+    naive = sum(raw[t][0] == truth[t][0] for t in inner) / len(inner)
+    assert agree > 0.97
+    assert naive < 0.9
+
+
+def test_the_first_hour_of_a_series_survives_the_correction():
+    times = _hours(30)
+    tagged = attach_tide(times, _spring_neap(times))
+    assert times[0] in tagged

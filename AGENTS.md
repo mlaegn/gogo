@@ -11,7 +11,7 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 - **One repo.** `api` and `worker` are processes, not repositories. A new forecast source is `src/gogo/ingest/<name>.py` behind `ForecastSource`.
 - **Open-Meteo only for v1.** Marine + weather forecast. `cell_selection=sea` on marine. `best_match`. Land cell for wind. Batch unique grid points. `forecast_days=7`, `timezone=Europe/Lisbon`, `timeformat=unixtime`.
 - **UTC inside, Lisbon at the edges.** Every stored and passed timestamp is timezone-aware UTC. Local time exists only in CLI output, API responses, and later the UI. "Saturday 08:00" is a *local* concept and must be resolved in `Europe/Lisbon`.
-- **Tide** from `sea_level_height_msl` is a phase (low/mid/high), not a navigation table. Each hour is judged against the cycle around it (`tide.TIDE_CONTEXT` either side), never against the min/max of whatever was loaded — so anything that classifies an hour must load that context with it. Compare to Hidrográfico before trusting the tide term. S12 replaces it with height + rate.
+- **Tide** from `sea_level_height_msl` is a phase (low/mid/high), not a navigation table. Each hour is judged against the cycle around it (`tide.TIDE_CONTEXT` either side), never against the min/max of whatever was loaded — so anything that classifies an hour must load that context with it. Checked against the Instituto Hidrográfico on 2026-10-14 (`scripts/tide_check.py`): heights ±4 cm and range within 2%, but every turn 32 minutes early, so `tide.SEA_LEVEL_LEAD` reads each hour 32 minutes back; the stored forecast keeps Open-Meteo's own stamps. S12 replaces it with height + rate.
 - **Score decides.** LLM is not in the path. Reasons must explain a rank in one sentence.
 - **A window is a run of adjacent passing hours** (score v2). Score every hour, group consecutive non-`no` hours, rank by the mean and then by duration. A `no` hour or a gap in the data ends a run. `reasons` come from the member hour nearest the mean, so the sentence explains the number; `peak_at` is kept alongside. `ends_at` is exclusive. Changing this rule is a `SCORE_VERSION` bump, not a tweak.
 - **`forecast_current` is for serving. Evaluation reads `forecast_snapshots` at an as-of.** Backtesting against current leaks hindsight, because current is overwritten by later runs.
@@ -58,6 +58,7 @@ docker-compose.prod.yml  # VPS: unpublished Postgres + worker; --profile web for
 scripts/backup.sh        # nightly pg_dump into backups/
 scripts/spot_geometry.py # faces_deg / exposure / shadow_sectors for coast.yml, from the OSM coastline
 scripts/wave_rays.py     # wave rays over the EMODnet seabed; `make nazare` validates it (eval group)
+scripts/tide_check.py    # Open-Meteo's tide against the official one at Cascais and Peniche
 src/gogo/data/rays.json  # traced refraction per spot; regenerate with `wave_rays.py spots` when a spot moves
 ```
 

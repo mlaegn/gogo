@@ -19,7 +19,11 @@ from gogo.rays import factor, load_tables
 # direction: calm is glassy wherever it blows from, and a strong cross-shore wind can
 # veto. Tide phase is read from the cycle around each hour instead of from the min and
 # max of whatever series was loaded, so a backtest and the page agree on it.
-SCORE_VERSION = "v3"
+#
+# v4 — Open-Meteo's sea level turns 32 minutes before the official tide (Instituto
+# Hidrográfico, Cascais and Peniche, 120 turning points, spread 3–4 min). The tide phase
+# now reads each hour 32 minutes back; a quarter of surfable hours had the wrong phase.
+SCORE_VERSION = "v4"
 
 # Onshore is ~180° from the spot's offshore_from.
 _ONSHORE_ALIGN_DEG = 75
