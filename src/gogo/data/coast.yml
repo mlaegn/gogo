@@ -5,6 +5,13 @@
 #   coastline (2026-10-06) and a year of reanalysis swell. faces_deg is the shore
 #   normal, the swell direction that meets the beach square-on. exposure is sheltered
 #   when land blocks over 20% of the swell energy reaching the spot's marine cell.
+# swell windows: drafts, argued with physics where it had something to say. On
+#   2026-10-09, after wave rays over the real seabed, Ribeira 330→355 and Lagide 330→5:
+#   swell from there arrives within 10% of the spot's best, so a window that took it at
+#   full offshore height is right. Foz, Empa and Pedra Branca also take 330–340° swell
+#   physically — it breaks within 2–17° of square-on, like their 300° swell — but only
+#   64–73% of it arrives, and the window has no way to say "smaller". Their maxima move
+#   to 340 together with `rays:size`, which does; until then they stay at 320.
 # shadow_sectors: from the same script — arcs of "from" bearings, read clockwise, from
 #   which land 1–60 km out blocks the open sea, within 90° of faces_deg.
 #   Rerun the script when a spot is added or its coordinates change.
@@ -16,7 +23,7 @@ spots:
     lon: -9.419
     region: ericeira
     swell_from_min: 250
-    swell_from_max: 330
+    swell_from_max: 355
     size_min_m: 0.8
     size_max_m: 3.2
     period_min_s: 8
@@ -316,7 +323,7 @@ spots:
     lon: -9.361
     region: peniche
     swell_from_min: 250
-    swell_from_max: 330
+    swell_from_max: 5
     size_min_m: 0.8
     size_max_m: 3.0
     period_min_s: 8

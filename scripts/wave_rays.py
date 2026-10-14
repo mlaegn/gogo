@@ -298,8 +298,11 @@ def trace(f: Field, x0: float, y0: float, step_deg: float = 0.25) -> Fan:
     return Fan(launch=launch, exit_bearing=exit_bearing, c_start=c_start)
 
 
-def spread(delta_deg: np.ndarray, s: int = SPREAD_S) -> np.ndarray:
-    """cos^2s(θ/2), normalised to integrate to one over θ in radians."""
+def spread(delta_deg: np.ndarray, s: int | None = None) -> np.ndarray:
+    """cos^2s(θ/2), normalised to integrate to one over θ in radians. `s` defaults to
+    the module's SPREAD_S *at call time*: a default bound at definition time once made
+    a sensitivity sweep over the spread silently test nothing."""
+    s = SPREAD_S if s is None else s
     norm = math.gamma(s + 1) / (2 * math.sqrt(math.pi) * math.gamma(s + 0.5))
     return norm * np.cos(np.radians(delta_deg) / 2) ** (2 * s)
 

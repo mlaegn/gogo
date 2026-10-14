@@ -212,16 +212,16 @@ def test_movement_sees_a_candidate_close_a_spot():
 
 
 def test_movement_sees_the_taper_open_a_spot_just_outside_its_window():
-    """Foz faces 290° and its window ends at 320°; a 330° swell is closed today and
-    wraps in under the taper at nearly full height."""
-    spots = _spots("foz_lizandro")
+    """São Sebastião faces 265° and its window ends at 330°; a 340° swell is closed
+    today and wraps in under the taper at about three quarters of its height."""
+    spots = _spots("sao_sebastiao")
     conn = _conn()
     with conn:
-        _hours(conn, spots, swell_from_deg=330.0)
+        _hours(conn, spots, swell_from_deg=340.0)
         moved = cand.movement(conn, spots, cand.options_for(["dir_taper:45"]))
     m = moved["dir_taper:45"]
-    assert m.opened["foz_lizandro"] == 14 and m.closed["foz_lizandro"] == 0
-    assert m.disagreements == [(DAY, None, "foz_lizandro")]
+    assert m.opened["sao_sebastiao"] == 14 and m.closed["sao_sebastiao"] == 0
+    assert m.disagreements == [(DAY, None, "sao_sebastiao")]
 
 
 def test_movement_respects_the_date_range():

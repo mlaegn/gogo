@@ -321,15 +321,23 @@ def _dir(spot_id: str, options: ScoreOptions, swell_from_deg: float, **kwargs):
 
 
 def test_just_outside_an_open_spots_window_wraps_in():
-    """Ribeira: window 250–330°, faces 260°. 345° is 15° past the edge and 85° off the
-    beach, so it arrives at about half height: sqrt(cos 85° / cos 70°)."""
-    incumbent, _ = _dir("ribeira", INCUMBENT, 345, swell_height_m=1.6, swell_period_s=11)
-    tapered, r = _dir("ribeira", TAPER, 345, swell_height_m=1.6, swell_period_s=11)
+    """São Sebastião: window 250–330°, faces 265°. 345° is 15° past the edge and 80°
+    off the beach, so refraction keeps sqrt(cos 80° / cos 65°) of it, about 0.64."""
+    incumbent, _ = _dir("sao_sebastiao", INCUMBENT, 345, swell_height_m=1.6, swell_period_s=11)
+    tapered, r = _dir("sao_sebastiao", TAPER, 345, swell_height_m=1.6, swell_period_s=11)
     assert incumbent.vetoed
     assert not tapered.vetoed
     assert r["swell_dir"].points == 7
     assert r["swell_dir"].detail == "swell 345° is 15° outside 250–330°, wrapping in"
-    assert r["size"].detail == "1.6 m from 345° breaks like 0.8 m, in range"
+    assert r["size"].detail == "1.6 m from 345° breaks like 1.0 m, in range"
+
+
+def test_just_below_the_window_a_swell_nearer_square_on_barely_shrinks():
+    """Ribeira: window from 250°, faces 260°. 235° is 15° past the edge but only 25°
+    off the beach, so it keeps sqrt(cos 25° / cos 10°), about 0.96."""
+    tapered, r = _dir("ribeira", TAPER, 235, swell_height_m=1.6, swell_period_s=11)
+    assert not tapered.vetoed
+    assert r["size"].detail == "1.6 m from 235° breaks like 1.5 m, in range"
 
 
 def test_a_swell_nearer_the_shore_normal_than_the_edge_loses_nothing():
@@ -359,7 +367,7 @@ def test_a_swell_from_the_land_side_stays_closed():
 
 
 def test_a_spot_without_measured_geometry_is_never_tapered():
-    spot = by_id()["ribeira"].model_copy(update={"faces_deg": None, "exposure": None})
+    spot = by_id()["sao_sebastiao"].model_copy(update={"faces_deg": None, "exposure": None})
     assert score_hour(spot, hour(swell_from_deg=345), TAPER).vetoed
 
 
@@ -375,7 +383,7 @@ def test_inside_the_window_the_taper_changes_nothing():
 
 def test_the_taper_composes_with_period_aware_size():
     both = ScoreOptions(dir_taper_deg=45, size_period_typical=True)
-    _, r = _dir("ribeira", both, 345, swell_height_m=1.6, swell_period_s=14)
+    _, r = _dir("sao_sebastiao", both, 345, swell_height_m=1.6, swell_period_s=14)
     assert r["size"].detail.startswith("1.6 m at 14 s from 345° breaks like a typical")
 
 
@@ -553,10 +561,10 @@ RAYS_SIZE = ScoreOptions(rays=True, rays_keep_window=True)
 
 
 def test_rays_for_size_keep_the_window_for_direction():
-    """Ribeira from 345°: the rays say it arrives in full, the window says no. With
-    rays:size the window wins on direction."""
-    full, _ = _rays("ribeira", 345)
-    size_only, _ = _rays("ribeira", 345, options=RAYS_SIZE)
+    """Ribeira from due north: the rays deliver most of it, the window (to 355°) does
+    not take it. With rays:size the window wins on direction."""
+    full, _ = _rays("ribeira", 0)
+    size_only, _ = _rays("ribeira", 0, options=RAYS_SIZE)
     assert not full.vetoed
     assert size_only.vetoed
 
