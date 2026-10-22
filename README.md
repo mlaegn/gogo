@@ -17,9 +17,12 @@ was, without showing you what we predicted first.
 
 ## Status
 
-**Phase 2 — store, fetch, windows.** Forecasts persist and are served as ranges.
-The worker has run unattended on a small VPS since 10 September 2026, so snapshot
-history now accumulates on its own. Labels are the bottleneck, and the only one.
+**Stage 3 — improve the score, with a number attached.** The worker has run unattended
+on a small VPS since 10 September 2026, so forecast history accumulates on its own; the
+evaluation harness exists; the served score is **v4**, with its inputs checked against
+outside references. Physics improvements are built and tested as *candidates* that the
+backtest compares against the served score — and they wait there, because **labels are
+the bottleneck, and the only one.**
 
 | Piece | State |
 |---|---|
@@ -36,6 +39,8 @@ history now accumulates on its own. Labels are the bottleneck, and the only one.
 | `gogo backfill` — ERA5 reanalysis, never served | done |
 | `gogo weekend --db` / `GET /api/windows` | done (read stored rows) |
 | Windows as time ranges (score v2) | done |
+| Score v3 — calm wind is glassy, strong cross-shore vetoes, tide judged per cycle | done |
+| Score v4 — tide checked against the Hidrográfico, read 32 min back | done |
 | Any day, not just Saturday — `/api/windows?day=` | done |
 | Mobile page (React + TS): windows + blind post-session card | done |
 | `gogo worker` — fetch loop with backoff + coverage check | done |
@@ -50,8 +55,12 @@ history now accumulates on its own. Labels are the bottleneck, and the only one.
 | `eval/metrics.py` + `baselines.py` — ranking accuracy vs five baselines (S10) | done |
 | `gogo backtest` — deterministic, offline, stored runs + markdown (S11) | done |
 | **Stage 2 complete** — the harness exists | done |
+| Candidates — score changes measured against the served score before they ship | done |
+| Period-aware size, direction taper, headland shadow — as candidates | done, waiting for labels |
+| Wave rays over the real seabed, checked on Nazaré and 16 local facts — as candidates | done, waiting for labels |
 | ~100 observations — the Stage 1 gate | **not yet** |
-| Accounts and invite-only groups, deploy | later |
+| Evening go / no-go notification | later |
+| Accounts and invite-only groups | later |
 
 Thesis [`surfreporter`](https://github.com/MaximilianLae/surfreporter) is reference only.
 
@@ -65,6 +74,7 @@ gogo fetch          → Open-Meteo → snapshots + current (worker writes)
 gogo worker         → the same on a loop; snapshot history is unrecoverable
 gogo health         → is the forecast fresh and is every spot still ranked?
 gogo backfill       → ERA5 archive → snapshots only, is_analysis
+gogo backtest       → labels × as-of features → ranking accuracy vs baselines and candidates
 gogo weekend --db   → read current → group Saturday into ranges → print
 GET /api/windows    → same as --db, JSON (cookie-gated)
 ```
@@ -86,7 +96,8 @@ The API does **not** call Open-Meteo. If current is empty, `/api/windows` return
 | Local engine | OrbStack | Runs the same `docker compose` file |
 | UI | Vite + React + TypeScript | Phone list + detail — the primary surface |
 | Alerts (later) | Web push + email | The evening go / no-go |
-| Host | Hetzner/OVH VPS (or Fly) | One box, two processes. Not EKS |
+| Host | A small VPS | One box, two processes. Not EKS |
+| Offline analysis | numpy, `eval` group only | Ray tracing; never in the worker or API image |
 
 One git repo. `api` and `worker` are processes, not extra repositories.
 
@@ -113,9 +124,9 @@ make down               # stop Postgres; volume (data) stays
 One image, two processes, one Postgres. The worker is what you turn on first — snapshot
 history is unrecoverable. The page is optional (`--profile web`). Not EKS.
 
-Run through once on a Hetzner CX23 (2 vCPU, 4 GB, 40 GB) in Helsinki, Debian 13, about
-€9/month with Hetzner's own disk backups on. Every step below is what actually worked,
-not what ought to. Total time from empty console to a healthy worker was under an hour.
+Run through once on a small VPS (2 vCPU, 4 GB RAM, 40 GB disk, Debian 13) with the
+provider's disk backups on. Every step below is what actually worked, not what ought to.
+Total time from empty console to a healthy worker was under an hour.
 
 1. **Create the box.** Add your SSH public key during creation, so no root password is
    ever mailed to you. Attach a cloud firewall allowing inbound TCP 22 and ICMP only —
@@ -375,14 +386,19 @@ Copy `.env.example` to `.env` if you change the database URL. Defaults match com
 
 ```text
 src/gogo/data/coast.yml      # curated gates — edit here first
-src/gogo/score.py            # pure, tested
+src/gogo/data/rays.json      # traced refraction per spot, from scripts/wave_rays.py
+src/gogo/score.py            # pure, tested; ScoreOptions holds the candidates
+src/gogo/tide.py             # low / mid / high per tide cycle, Open-Meteo's lead corrected
+src/gogo/rays.py             # reads rays.json in plain Python
+src/gogo/features.py         # what was knowable at a moment: the floor under the backtest
+src/gogo/eval/               # dataset, metrics, baselines, candidates, backtest
 src/gogo/ingest/openmeteo.py # the only forecast source for v1
 src/gogo/ingest/archive.py   # ERA5 reanalysis — past hours, never served
 src/gogo/store.py            # seed, persist, load current
 src/gogo/worker.py           # fetch_once, run_forever, backfill
 src/gogo/demo.py             # FIXTURE labels for harness work, never real data
 src/gogo/importer.py         # CSV of remembered sessions → labels
-src/gogo/cli.py              # gogo weekend | fetch | backfill | migrate | log | import
+src/gogo/cli.py              # gogo weekend | fetch | worker | health | backfill | migrate | log | import | backtest | demo
 src/gogo/serving.py          # pick a day, score it, record what we showed
 src/gogo/api.py              # /health + /api: days, windows?day=, spots, observations
 src/gogo/schemas.py          # the wire format; web/src/api/schema.d.ts is generated from it
@@ -395,6 +411,9 @@ src/gogo/migrations/         # applied by gogo migrate, never by Postgres
 Dockerfile                   # worker + api, secrets from env at run time
 docker-compose.prod.yml      # VPS stack; local `make up` still uses docker-compose.yml
 scripts/backup.sh            # pg_dump from inside Postgres, no password on argv
+scripts/spot_geometry.py     # facing, exposure and shadow sectors from the OSM coastline
+scripts/wave_rays.py         # wave rays over EMODnet bathymetry → data/rays.json (eval group)
+scripts/tide_check.py        # Open-Meteo's tide against the official one
 uv.lock                      # pinned Python deps; make install / CI use this
 .github/workflows/test.yml   # pytest + compose Postgres; typecheck, build, type drift
 tests/                       # ranks, ingest mocks, store roundtrip
@@ -402,12 +421,50 @@ tests/                       # ranks, ingest mocks, store roundtrip
 
 How to change the product: edit the spot file or the score, add a fixture in `tests/test_score.py`, run `make test`. If a rank needs a paragraph of justification, the score is not done.
 
+## Improving the score
+
+No change to the served score lands without a backtest number. So a change is built as a
+**candidate** — a `ScoreOptions` flag that serving never sets — and the backtest re-scores
+every label's own stored hours with it, reporting candidate minus served score on the
+same pairs, with an interval. A second section needs no labels at all: it re-ranks every
+stored day and says how often the headline would change, which spots gain or lose hours,
+and which days a label would settle the argument on.
+
+```bash
+make backtest-candidates   # every candidate against the served score
+make nazare                # the wave-ray tracer against the Nazaré canyon (eval group)
+```
+
+The candidates so far are physics, each validated before it touches a rank:
+
+- **Period-aware size.** A long swell breaks bigger than its offshore height says
+  (Komar & Gaughan: H^0.8 T^0.4); `size_period:typical` judges each hour against the
+  period usual for its height on this coast, so a typical day scores as before.
+- **Direction taper and headland shadow.** Soft window edges on open beaches, and a
+  diffraction-shaped loss behind headlands, from each spot's facing and shadow sectors
+  measured off the OpenStreetMap coastline (`scripts/spot_geometry.py`).
+- **Wave rays over the real seabed** (`scripts/wave_rays.py`). Reverse ray tracing over
+  EMODnet bathymetry gives, per spot, how much of an open-sea swell reaches it by
+  direction and period. It reproduces the Nazaré canyon's focusing, Snell's law on a
+  straight beach, and sixteen things locals know — Carcavelos gets about a third of a
+  north-west swell, Baleal and Supertubos swap places between north-west and south-west.
+  `rays:size` uses it for size and keeps each spot's window for direction, because rays
+  measure energy arriving, not whether it breaks well.
+
+Not attempted: anything that needs the seabed *at the break* — break depth with tide,
+hollow versus mushy. Public bathymetry is about 100 m coarse there and beach bars move
+with every swell.
+
 ## Forecast notes
 
 - Marine: `cell_selection=sea`, `best_match`, `timezone=Europe/Lisbon`, `timeformat=unixtime`, `forecast_days=7`
 - Timestamps are timezone-aware **UTC** everywhere inside; Lisbon is rendered at the edges. `unixtime` avoids the ambiguous local hour on the autumn DST fold
 - Wind: weather API, knots, land cell
-- Tide is a **phase** from `sea_level_height_msl`, not a Hidrográfico table
+- Tide is a **phase** (low / mid / high, per tide cycle) from `sea_level_height_msl`.
+  Checked against the Instituto Hidrográfico's official predictions at Cascais and
+  Peniche (`scripts/tide_check.py`): heights within 4 cm and the range within 2%, but
+  every high and low 32 minutes early, so each hour is read 32 minutes back. Uncorrected,
+  a quarter of surfable hours had the wrong phase
 - A cycle that finds nothing changed appends no snapshot, so `forecast_snapshots`
   answers *what did we believe at T* but not *were we running at T*. `fetch_cycles`
   answers the second. Measured on the box: 60 of 96 cycles stored nothing, and a
