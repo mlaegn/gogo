@@ -79,7 +79,7 @@ def test_checked_needs_no_rating():
 
 
 def test_scope_defaults_to_global():
-    """Ratings pool; only interpretation is ever group-scoped (docs/plan.md, Stage 4)."""
+    """Ratings pool; only interpretation is ever group-scoped."""
     assert _observation().scope == "global"
 
 

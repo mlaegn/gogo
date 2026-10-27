@@ -15,7 +15,7 @@ from gogo.rays import factor, load_tables
 # changed is that adjacent passing hours are grouped and ranked by their mean, so the
 # same forecast can now produce a different ranking.
 #
-# v3 — two bugs, not a retune; see S12a in docs/plan.md. Wind reads speed as well as
+# v3 — two bugs, not a retune. Wind reads speed as well as
 # direction: calm is glassy wherever it blows from, and a strong cross-shore wind can
 # veto. Tide phase is read from the cycle around each hour instead of from the min and
 # max of whatever series was loaded, so a backtest and the page agree on it.

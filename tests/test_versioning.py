@@ -29,7 +29,7 @@ def _spot(**kwargs) -> Spot:
 def test_digest_is_pinned():
     """The canary. If this fails, every stored row pointing at an old version is orphaned.
 
-    Changing it is allowed — deliberately, with a note in docs/plan.md — never by accident.
+    Changing it is allowed — deliberately, with a note in the commit message — never by accident.
     """
     assert spec_version(_spot()) == "9cfd22ce1fe4"
 

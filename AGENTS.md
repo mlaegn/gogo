@@ -4,7 +4,7 @@ Personal surf go / no-go planner. Lisbon–Ericeira–Peniche only.
 
 Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Streamlit, RAG, or IPMA-as-primary.
 
-`docs/plan.md` is the current contract. Read it before starting work: it says which slice is next and why. It is git-ignored — private notes on the maintainer's machine, never in the public repo — so a fresh clone does not have it. Community input is training signal for the score, not a feed.
+The README's **Status** and **Roadmap** say where the project is and what is next; read them before starting work. Community input is training signal for the score, not a feed.
 
 ## Frozen decisions
 
@@ -39,7 +39,6 @@ Thesis `surfreporter` is reference, not a dependency. Do not copy Pinecone, Stre
 ## Layout
 
 ```text
-docs/plan.md             # the contract — which slice is next (git-ignored, local only)
 src/gogo/data/coast.yml  # the content — edit here first
 src/gogo/score.py        # pure, tested
 src/gogo/schemas.py      # the wire format; the client's types are generated from it
@@ -77,4 +76,4 @@ Do not add a CSS framework, a vector DB, or an LLM while the score is still bein
 
 **The log card must never show our score before the answer is saved.** Anchoring is the one bug in this system that produces data which looks fine and is worthless. `test_web.py` asserts it against rendered HTML; do not relax that test.
 
-**No score improvements before the evaluation harness exists** (`docs/plan.md`, Stage 2 gate). A weight change without a backtest number is an opinion.
+**No score change ships without a backtest number.** Build it as a candidate (`ScoreOptions`, `gogo.eval.candidates`) and compare it to the served score with `gogo backtest --candidate`. A weight change without a backtest number is an opinion.
