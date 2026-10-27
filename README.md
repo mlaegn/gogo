@@ -2,322 +2,142 @@
 
 ![Gogo — go / no-go surf windows](img/header-banner.png)
 
-Go / no-go surf windows for the **Lisbon–Ericeira–Peniche** coast.
-
-Not a generated surf report and not another Surfline. The unit is a **time window**: where to go, when, and why — for you.
+Go / no-go surf windows for the **Lisbon–Ericeira–Peniche** coast. The unit is a time
+window — where to go, when, and why:
 
 ```text
 Saturday 07:00–10:00 · Ribeira d'Ilhas · 78
 offshore, incoming mid, 1.3 m @ 11 s NW
 ```
 
-That is what the page shows: a ranked list of **time ranges** for any day in the next
-week, one per spot, each with the hour it peaks — and a card that asks how it actually
-was, without showing you what we predicted first.
+After a session, a card asks how it actually was, **before** showing what we predicted.
+Those answers, joined to the forecast we stored at the time, are the training signal the
+score improves against. No feed, no LLM in the path, no score change without a backtest
+number.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Status](#status)
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+- [Logging sessions](#logging-sessions)
+- [Improving the score](#improving-the-score)
+- [Deployment](#deployment)
+- [Project Structure](#project-structure)
+- [Roadmap](#roadmap)
+- [Attribution](#attribution)
+
+## Overview
+
+| Piece | What it does |
+|---|---|
+| **Spots** | 16 spots in `src/gogo/data/coast.yml`: swell window, size range, wind, tide |
+| **Score** | Deterministic, per hour; adjacent passing hours become a window, ranked by mean then length (`v4`) |
+| **Worker** | Fetches Open-Meteo marine + wind hourly into Postgres; keeps every changed forecast |
+| **Page** | Phone UI (React + TS): ranked windows for any day this week, plus the blind log card |
+| **Labels** | `observations` from the page, `gogo log`, or a CSV of remembered sessions |
+| **Harness** | `gogo backtest`: labels × what was knowable at the time → ranking accuracy vs baselines |
+
+Rules that hold everywhere:
+
+- **UTC inside, Lisbon at the edges.**
+- **Worker writes, API reads.** The API never calls Open-Meteo.
+- **Serving reads `forecast_current`; evaluation reads `forecast_snapshots` at an as-of.**
+- **Reanalysis is never served.** `gogo backfill` writes analysis rows only.
+- **The log card cannot show our score** until the answer is stored.
+- **Fixture labels are quarantined** by `is_synthetic` and excluded from every metric.
+
+## Architecture
+
+```mermaid
+graph LR
+    OM[Open-Meteo<br/>marine + wind] --> W[worker<br/>hourly]
+    ERA[ERA5 archive] --> BF[gogo backfill]
+    W --> SNAP[(forecast_snapshots<br/>history)]
+    W --> CUR[(forecast_current<br/>serving)]
+    BF --> SNAP
+    CUR --> API[API + page]
+    API --> IMP[(window_impressions<br/>what we showed)]
+    API --> OBS[(observations<br/>labels)]
+    LOG[gogo log / import] --> OBS
+    SNAP --> BT[gogo backtest]
+    OBS --> BT
+    BT --> SCORE[score change<br/>with a number]
+```
 
 ## Status
 
-**Stage 3 — improve the score, with a number attached.** The worker has run unattended
-on a small VPS since 10 September 2026, so forecast history accumulates on its own; the
-evaluation harness exists; the served score is **v4**, with its inputs checked against
-outside references. Physics improvements are built and tested as *candidates* that the
-backtest compares against the served score — and they wait there, because **labels are
-the bottleneck, and the only one.**
+**Stage 3 — improve the score, with a number attached.** The pipeline, harness and host
+are done. **Labels are the bottleneck:** the physics candidates below are built and wait
+for real same-day pairs.
 
-| Piece | State |
-|---|---|
-| 16 spots in `src/gogo/data/coast.yml` | done |
-| Deterministic score + tests | done |
-| Open-Meteo marine + wind | done |
-| Postgres (`spots`, `spot_grid`, `forecast_snapshots`, `forecast_current`) | done |
-| `gogo migrate` — numbered SQL, `schema_migrations` | done |
-| Versioned score + spot specs | done |
-| `window_impressions` — what we told you, append-only | done |
-| `gogo log` — observations, residual, fault codes | done |
-| `gogo import` — bulk CSV of remembered sessions | done |
-| `gogo fetch` | done (one-shot) |
-| `gogo backfill` — ERA5 reanalysis, never served | done |
-| `gogo weekend --db` / `GET /api/windows` | done (read stored rows) |
-| Windows as time ranges (score v2) | done |
-| Score v3 — calm wind is glassy, strong cross-shore vetoes, tide judged per cycle | done |
-| Score v4 — tide checked against the Hidrográfico, read 32 min back | done |
-| Any day, not just Saturday — `/api/windows?day=` | done |
-| Mobile page (React + TS): windows + blind post-session card | done |
-| `gogo worker` — fetch loop with backoff + coverage check | done |
-| `gogo health` — freshness + coverage, exit 1 when the box is not working | done |
-| Bounded tables — changed-payload snapshots, pruned `forecast_current` | done — 68% fewer rows, measured |
-| `fetch_cycles` — one row per fetch, so coverage survives the dedup | done |
-| `gogo demo` — quarantined fixture labels for harness work | done |
-| A host to run the worker on, container image, backups | done — worker on a VPS since 2026-09-10, nightly dump, restore tested |
-| The page on that host | running, private — over an SSH tunnel; public needs a domain |
-| `features.py` — as-of features, the floor under the harness (S8) | done |
-| `eval/dataset.py` — labels joined to features, grouped into swell events (S9) | done |
-| `eval/metrics.py` + `baselines.py` — ranking accuracy vs five baselines (S10) | done |
-| `gogo backtest` — deterministic, offline, stored runs + markdown (S11) | done |
-| **Stage 2 complete** — the harness exists | done |
-| Candidates — score changes measured against the served score before they ship | done |
-| Period-aware size, direction taper, headland shadow — as candidates | done, waiting for labels |
-| Wave rays over the real seabed, checked on Nazaré and 16 local facts — as candidates | done, waiting for labels |
-| ~100 observations — the Stage 1 gate | **not yet** |
-| Evening go / no-go notification | later |
-| Accounts and invite-only groups | later |
-
-Thesis [`surfreporter`](https://github.com/MaximilianLae/surfreporter) is reference only.
-
-Where this is going, in short: locals' post-session feedback becomes training signal for
-the score, not a social feed, and no score change lands without a backtest number.
-
-## How it works
-
-```text
-gogo fetch          → Open-Meteo → snapshots + current (worker writes)
-gogo worker         → the same on a loop; snapshot history is unrecoverable
-gogo health         → is the forecast fresh and is every spot still ranked?
-gogo backfill       → ERA5 archive → snapshots only, is_analysis
-gogo backtest       → labels × as-of features → ranking accuracy vs baselines and candidates
-gogo weekend --db   → read current → group Saturday into ranges → print
-GET /api/windows    → same as --db, JSON (cookie-gated)
-```
-
-`backfill` exists so past sessions can be labelled without waiting for new ones. It never
-writes `forecast_current`: reanalysis is what happened, and serving it would make the
-score look clairvoyant.
-
-The API does **not** call Open-Meteo. If current is empty, `/api/windows` returns 503 until you `fetch`.
-
-## Stack
-
-| Piece | Choice | Why |
+| Stage | Contents | State |
 |---|---|---|
-| Language | Python 3.12 | Score and domain are the hard part |
-| API | FastAPI | `/health` open, `/api/*` behind the cookie |
-| Store | Postgres 16 | Snapshots + current row + later session log |
-| Forecast | Open-Meteo Marine + Forecast | Hourly swell, wind-sea, wind, sea-level |
-| Local engine | OrbStack | Runs the same `docker compose` file |
-| UI | Vite + React + TypeScript | Phone list + detail — the primary surface |
-| Alerts (later) | Web push + email | The evening go / no-go |
-| Host | A small VPS | One box, two processes. Not EKS |
-| Offline analysis | numpy, `eval` group only | Ray tracing; never in the worker or API image |
+| 0 · Foundations | UTC discipline, versioned score + spot specs, observations, impressions, migrations | done |
+| 1 · Labels | windows as ranges, any day, phone page, worker, VPS, import | built; **~100 labels: not yet** |
+| 2 · Harness | as-of features, event-grouped dataset, 5 metrics × 5 baselines, `gogo backtest` | done |
+| 3 · Better score | v3 wind/tide fixes, v4 tide timing; size / taper / shadow / rays candidates | candidates waiting for labels |
+| 4 · Groups | invite-only accounts, spec overlays over a global label pool | later |
 
-One git repo. `api` and `worker` are processes, not extra repositories.
+## Quick Start
 
-## Run locally
-
-Needs [uv](https://docs.astral.sh/uv/) and [OrbStack](https://orbstack.dev) (for Postgres).
+Needs [uv](https://docs.astral.sh/uv/) and [OrbStack](https://orbstack.dev) (Postgres).
+Node only for the page.
 
 ```bash
-make install
-make up                 # Postgres; waits until healthy, then gogo migrate
+make install        # Python deps from uv.lock
+make up             # Postgres, then gogo migrate
 make test
-make weekend            # fixture, no network
-make fetch              # Open-Meteo → Postgres
-make weekend-db         # score stored rows
-make api                # http://127.0.0.1:8000/api/windows
-make ui                 # build the page (needs Node; once, then when the UI changes)
-make web                # serve it, key "devkey"
-make phone              # same, reachable from your phone on this wifi
-make down               # stop Postgres; volume (data) stays
+make fetch          # Open-Meteo → Postgres
+make weekend-db     # score the stored forecast, print Saturday
+make ui && make web # build and serve the page, key "devkey"
 ```
 
-## Host (VPS)
+Defaults match `docker-compose.yml` (`gogo`/`gogo`/`gogo` on `localhost:5432`). Copy
+`.env.example` to `.env` only to change them.
 
-One image, two processes, one Postgres. The worker is what you turn on first — snapshot
-history is unrecoverable. The page is optional (`--profile web`). Not EKS.
+## Commands
 
-Run through once on a small VPS (2 vCPU, 4 GB RAM, 40 GB disk, Debian 13) with the
-provider's disk backups on. Every step below is what actually worked, not what ought to.
-Total time from empty console to a healthy worker was under an hour.
+| Command | Does |
+|---|---|
+| `gogo fetch` | One Open-Meteo cycle → snapshots + current |
+| `gogo worker` | The same, hourly, with backoff; `--once` for one cycle |
+| `gogo health` | Exit 1 if the forecast is stale or a spot has no hours; pings `GOGO_HEARTBEAT_URL` only when healthy |
+| `gogo weekend [--db]` | Print a day's ranked windows (fixture, live, or stored) |
+| `gogo backfill --from --to` | ERA5 reanalysis → snapshots, `is_analysis` |
+| `gogo log <spot> …` | Record one session |
+| `gogo import <csv> [--dry-run]` | Record remembered sessions in bulk |
+| `gogo backtest [--candidate …]` | Accuracy vs baselines; candidates vs the served score |
+| `gogo demo [--purge]` | Fixture labels for harness work — never real data |
+| `gogo migrate` | Apply `src/gogo/migrations/` |
 
-1. **Create the box.** Add your SSH public key during creation, so no root password is
-   ever mailed to you. Attach a cloud firewall allowing inbound TCP 22 and ICMP only —
-   at the provider, not `ufw`, so it holds even if the host is misconfigured. Keep the
-   ICMP rule: it carries path-MTU messages, and dropping it turns some connections into
-   hangs rather than clean failures. Never open 5432.
+| Make target | Does |
+|---|---|
+| `make ui-dev` / `make ui-types` | Vite with hot reload / regenerate client types (CI diffs them) |
+| `make phone` | Serve the page on the LAN |
+| `make backtest` / `make backtest-candidates` | The harness / every candidate |
+| `make nazare` | Validate the ray tracer on the Nazaré canyon (`eval` group) |
+| `make host` / `host-web` / `host-public` | Prod: worker / + page / + Caddy and a domain |
+| `make tunnel` | The host's page on `localhost:8088` over SSH |
+| `make import-host FILE=… [WRITE=1]` | Import a CSV onto the host, then delete it |
 
-2. **Base packages and swap.** `git make ca-certificates curl unattended-upgrades`, then
-   2 GB of swap. 4 GB of RAM builds the image without it, but swap is a cheap hedge
-   against a build that dies two-thirds through, and it survives reboots via `fstab`.
-
-3. **Docker from Docker's apt repository**, with the signing key, rather than piping a
-   script into a shell. Mind the distribution in the repo URL: `.../linux/debian` on
-   Debian and `.../linux/ubuntu` on Ubuntu. Using the wrong one produces a repo line with
-   a codename that does not exist there and `apt-get update` fails.
-
-4. **Clone, then generate the password on the box.** Do not copy `.env.example` here —
-   its `DATABASE_URL` is for a laptop and is noise on a server. The only variable
-   required is `POSTGRES_PASSWORD`:
-
-   ```bash
-   printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 32)" > .env && chmod 600 .env
-   ```
-
-   Hex on purpose: it is safe inside `DATABASE_URL`. Generating it on the box means it
-   never travels. Never commit `.env`. (`GOGO_WEB_SECRET` too, but only if you ever
-   bring the page up — the worker does not need it.)
-
-5. **`make host`.** Builds the frontend and the Python image, then starts Postgres and
-   the worker. Both migrate on boot behind an advisory lock. The worker fetches
-   immediately rather than waiting an hour, so there is a forecast stored within a
-   minute.
-
-6. **Backfill the archive once**, since the box starts with no reanalysis. A year takes
-   a couple of minutes and writes only analysis rows, so serving is untouched:
-
-   ```bash
-   docker compose -f docker-compose.prod.yml exec worker gogo backfill --from 2025-09-01 --to 2026-09-03
-   ```
-
-7. **Cron the dump** — `15 3 * * * /opt/gogo/scripts/backup.sh` — and note the server
-   clock is UTC. Files land in `backups/` (gitignored, mode 600), last 14 days kept. The
-   dump is verified for completeness before it is kept, and `GOGO_BACKUP_DEST` (an rsync
-   destination) sends a copy somewhere that is not this disk.
-
-8. **Restore one, once.** This is the only claim in the whole setup that no code can
-   check for you, and it takes a minute: `createdb restore_test`, pipe the newest dump
-   into `psql`, count the rows, `dropdb`. If the counts come back, you have a backup. If
-   you skip it, you have a belief.
-
-9. **Optional, five minutes:** set `GOGO_HEARTBEAT_URL` to a cron-monitor URL. See
-   *Knowing it is alive* below for why this is the piece that cannot live on the box.
-
-### Reaching the page
-
-The API is never published. It binds `127.0.0.1:8000` on the host, and how you get to it
-depends on who "you" are — which is two different problems with two different answers.
-
-**For yourself, today: an SSH tunnel.** No DNS, no certificate, no account, nothing
-installed.
-
-```bash
-make host-web      # on the box: Postgres, worker, API
-make tunnel        # on your laptop, leave it running
-```
-
-`make tunnel` and `make import-host` default to an SSH host called `gogo`. Put the real
-address in your own `~/.ssh/config` rather than here — the repo is public, every tool
-that speaks SSH resolves the alias for free from any directory, and nothing in the repo
-has to know where the box is:
-
-```
-Host gogo
-  HostName <your box>
-  User root
-  ServerAliveInterval 60
-```
-
-Or pass `HOST=` on the command line if you call yours something else.
-
-Then `http://localhost:8088`. SSH is doing the encryption, so the cookie never crosses a
-network in clear. The reason to prefer this over running the page locally against a
-laptop database is not convenience: what you log lands beside the snapshot history it
-will have to be joined against, instead of starting a second dataset that has to be
-merged later.
-
-`tailscale serve 8000` does the same job with a real certificate if you want it on your
-own phone. Also fine, also personal.
-
-**For everyone else, later: a domain.** Locals will not install a VPN client before they
-can tell you how the waves were, and anything added before the card costs you labels.
-About ten euros a year.
-
-1. Point an `A` record at the box. Caddy proves control over the name on port 80, so it
-   has to resolve before the first start.
-2. Open TCP 80 and 443 in the provider firewall. Still nothing else, and never 5432.
-3. Set `GOGO_DOMAIN` and `GOGO_WEB_SECRET` in `.env`, then `make host-public`. Caddy
-   fetches the certificate on the first request and renews it on its own.
-
-Caddy sits in its own `public` profile rather than in `web`, so the private route never
-starts it — otherwise it would come up with no domain and issue a certificate for
-"localhost". `caddy_data` is a named volume because it holds that certificate and the
-ACME account, and a throwaway one would re-issue on every restart until Let's Encrypt
-refuses, which it does after five for a domain in a week.
-
-Either route, the API must run with `--proxy-headers`, which the production compose
-passes. Without it the app sees plain http behind the terminator and the login cookie,
-which *is* the shared secret, loses its `Secure` flag.
-
-An unset `GOGO_WEB_SECRET` still means the page is **off**, not open. The worker does
-not need it.
-
-```bash
-make host                            # Postgres + worker
-make host-web                        # same, plus the page on 127.0.0.1:8000
-make host-public                     # same, plus Caddy and a certificate
-make tunnel                          # from your laptop: the page on localhost:8088
-make backup                          # pg_dump to backups/
-```
-
-### Knowing it is alive
-
-Both failure modes here are silent. A stopped worker still leaves a page that renders,
-and a spot that quietly drops out of the ranking is just one fewer row in a list nobody
-counts. So the question needs three separate pieces, and only two of them can live on
-the box.
-
-**The check** — `gogo health`. Exits 0 when the served forecast is fresh and all 16
-spots have hours, 1 otherwise. Read-only, so it is safe anywhere.
-
-```bash
-docker compose -f docker-compose.prod.yml exec worker gogo health
-```
-
-**The watcher** — the worker's container healthcheck runs that command every five
-minutes, so `docker compose ps` shows `unhealthy` when the forecast stops moving. Docker
-deliberately does not restart on it: the loop is built to ride out a bad hour at
-Open-Meteo rather than exit on one, and restarting would not fix an upstream outage.
-
-**The notifier** — this one cannot be here, and that is the whole point. A dead box
-cannot report that it is dead. Any alerting that runs on the server goes silent in
-exactly the cases that matter most: container gone, disk full, kernel panic, provider
-outage. So `gogo health` pings `GOGO_HEARTBEAT_URL` **only on success**, and something
-outside the box alerts when the pings stop. Absence is the signal, because absence is
-the one thing a dead machine can still produce.
-
-Nothing about that is vendor-specific. The check is ours and tested; the outsourced part
-is one outbound GET to a URL, and any cron-monitor service takes one.
-
-The page is where labels come from, so it is the way to use this. `make phone` prints a
-LAN address and a key — open it on your phone and add it to the home screen. An unset
-`GOGO_WEB_SECRET` means the page is **off** rather than open, so set a real one anywhere
-that is not your laptop.
-
-The frontend is Vite + React + TypeScript in `web/`, built into the Python package and
-served same-origin, so the cookie is the only auth and there is no CORS. `make install`
-stays Python-only — the score, the worker and the tests never need Node.
-
-```bash
-make ui-dev             # Vite on :5173 with `make web` behind it, hot reload
-make ui-types           # regenerate client types from FastAPI's schema; CI diffs this
-```
-
-Recording what you saw, which is what the score gets calibrated against:
+## Logging sessions
 
 ```bash
 gogo log ribeira --start 07:15 --end 09:00 --residual -1 --fault tide:-1 --crowd busy
-gogo log coxos --start 08:00 --end 08:30 --kind checked --residual -2
+gogo log coxos   --start 08:00 --end 08:30 --kind checked --residual -2
 ```
 
-Labels from the page and from `gogo log` belong to the same person: both read
-`GOGO_HANDLE`, defaulting to `max`. That matters more than it looks, because an
-observation is unique on (user, spot, start) — two handles would not collide, they would
-quietly store one session as two labels.
+| Field | Meaning |
+|---|---|
+| `--residual` | −2..+2 against what we predicted |
+| `--rating` | 1..5, absolute — for sessions nothing was predicted to (imports, the blind card) |
+| `--kind` | `surfed`, `checked` (looked and left), `cam` |
+| `--fault` | The gate we got wrong, e.g. `size:-1`, `tide:-1` |
 
-`--residual` is how it compared to what we predicted, −2 much worse to +2 much better.
-`--fault` names the gate we got wrong. `--kind checked` is looked-at-and-did-not-surf —
-the only trace a wrongly-vetoed spot ever leaves.
-
-To label a session from *before* the forecast was being stored, pull the reanalysis for
-those days first — then the hours have features to be judged against:
-
-```bash
-gogo backfill --from 2026-08-01 --to 2026-08-31
-```
-
-Use `--rating` rather than `--residual` for those: nothing was predicted to you at the
-time, so there is no residual to give. Swell and wind go back to at least 2022, tide only
-to late 2022.
-
-A season's worth at once, from a CSV — `date,spot,start,end` required, the rest optional:
+Remembered sessions, as CSV (`date,spot,start,end` required):
 
 ```csv
 date,spot,start,end,kind,rating,crowd,faults,note
@@ -325,164 +145,92 @@ date,spot,start,end,kind,rating,crowd,faults,note
 2026-03-14,coxos,09:15,09:30,checked,2,busy,size:-1,smaller than it should have been
 ```
 
-```bash
-gogo import sessions.csv --dry-run   # check it, write nothing
-gogo import sessions.csv
-```
+What counts is **comparable same-day pairs**: two spots on one day with different
+ratings. `--dry-run` reports that number. Log `checked` rows for spots you looked at and
+skipped, and use the whole rating range. For sessions before the worker started, run
+`gogo backfill` over those days first.
 
-Onto the box, from your laptop, which is where labels belong — beside the forecast
-history they have to be joined against:
-
-```bash
-make import-host FILE=sessions.csv          # dry run
-make import-host FILE=sessions.csv WRITE=1  # for real
-```
-
-The file is deleted from the host and the container afterwards either way. It is
-location history and has no business outliving the import that read it, which is also
-why `sessions*.csv` is gitignored.
-
-**The dry run reports *comparable* pairs, and that is the number to read.** Pairwise
-ranking accuracy drops any pair you rated the same, because equal ratings carry no
-ordering information — measured on the fixture labels, that removed more than half of
-them. Three spots on one morning all rated 4 is three pairs and zero comparable ones. So
-when writing the file, use the range, and log a `checked` row for anything you looked at
-and rejected. Both do more for the gate than logging more days.
-
-### Fixture labels, and why they are fenced off
-
-The evaluation harness cannot be written against an empty table, so `gogo demo` invents
-sessions from stored reanalysis — real spots, real days, same-day pairs, three raters.
-
-```bash
-gogo demo --days 40     # write fixture labels
-gogo demo --purge       # remove every one of them; real labels untouched
-```
-
-Every row carries `is_synthetic`, and `load_observations` and `count_observations`
-exclude it by default. This matters more than it sounds: the ratings are derived from our
-own score, so **any metric that counts them is measuring our own assumptions** and will
-come back flattering with nothing to reveal the error. A column rather than a naming
-convention, because a filter someone forgot is exactly how that happens.
-
-The synthetic rater has an opinion we wrote down — it likes size more than the score
-does, and it is noisy. A harness that reports perfect agreement with it has a bug, since
-it is supposed to detect exactly that disagreement. Feeding a measuring device a known
-quantity is the only way to trust its reading before pointing it at real labels.
-
-Fixture labels can validate the harness. They can never say whether the score is any
-good; only real ones can do that.
-
-Rows land unanchored, since no score was visible to you at the time. Re-running an edited
-file corrects it rather than duplicating it. The output counts **same-day spot pairs**,
-not just rows — ranking accuracy compares two spots on one day, so fifty one-spot days
-are fifty labels and no pairs. That is what the `checked` rows are for.
-
-If your database predates `gogo migrate`, baseline it once: `gogo migrate --baseline 001_init.sql`.
-
-Copy `.env.example` to `.env` if you change the database URL. Defaults match compose (`gogo` / `gogo` / `gogo` on `localhost:5432`).
-
-## Layout
-
-```text
-src/gogo/data/coast.yml      # curated gates — edit here first
-src/gogo/data/rays.json      # traced refraction per spot, from scripts/wave_rays.py
-src/gogo/score.py            # pure, tested; ScoreOptions holds the candidates
-src/gogo/tide.py             # low / mid / high per tide cycle, Open-Meteo's lead corrected
-src/gogo/rays.py             # reads rays.json in plain Python
-src/gogo/features.py         # what was knowable at a moment: the floor under the backtest
-src/gogo/eval/               # dataset, metrics, baselines, candidates, backtest
-src/gogo/ingest/openmeteo.py # the only forecast source for v1
-src/gogo/ingest/archive.py   # ERA5 reanalysis — past hours, never served
-src/gogo/store.py            # seed, persist, load current
-src/gogo/worker.py           # fetch_once, run_forever, backfill
-src/gogo/demo.py             # FIXTURE labels for harness work, never real data
-src/gogo/importer.py         # CSV of remembered sessions → labels
-src/gogo/cli.py              # gogo weekend | fetch | worker | health | backfill | migrate | log | import | backtest | demo
-src/gogo/serving.py          # pick a day, score it, record what we showed
-src/gogo/api.py              # /health + /api: days, windows?day=, spots, observations
-src/gogo/schemas.py          # the wire format; web/src/api/schema.d.ts is generated from it
-src/gogo/web.py              # the login form and the app shell; templates/ + static/ ship
-web/                         # Vite + React + TS → built into src/gogo/static/app
-src/gogo/clock.py            # UTC inside, Lisbon at the edges
-src/gogo/versioning.py       # spec_version for a spot
-src/gogo/migrate.py          # numbered SQL, schema_migrations
-src/gogo/migrations/         # applied by gogo migrate, never by Postgres
-Dockerfile                   # worker + api, secrets from env at run time
-docker-compose.prod.yml      # VPS stack; local `make up` still uses docker-compose.yml
-scripts/backup.sh            # pg_dump from inside Postgres, no password on argv
-scripts/spot_geometry.py     # facing, exposure and shadow sectors from the OSM coastline
-scripts/wave_rays.py         # wave rays over EMODnet bathymetry → data/rays.json (eval group)
-scripts/tide_check.py        # Open-Meteo's tide against the official one
-uv.lock                      # pinned Python deps; make install / CI use this
-.github/workflows/test.yml   # pytest + compose Postgres; typecheck, build, type drift
-tests/                       # ranks, ingest mocks, store roundtrip
-```
-
-How to change the product: edit the spot file or the score, add a fixture in `tests/test_score.py`, run `make test`. If a rank needs a paragraph of justification, the score is not done.
+All labels belong to one handle (`GOGO_HANDLE`, default `max`); a second handle would
+store one session as two labels.
 
 ## Improving the score
 
-No change to the served score lands without a backtest number. So a change is built as a
-**candidate** — a `ScoreOptions` flag that serving never sets — and the backtest re-scores
-every label's own stored hours with it, reporting candidate minus served score on the
-same pairs, with an interval. A second section needs no labels at all: it re-ranks every
-stored day and says how often the headline would change, which spots gain or lose hours,
-and which days a label would settle the argument on.
+A change is built as a **candidate**: a `ScoreOptions` flag that serving never sets. The
+backtest scores it on the same labelled pairs as the served score and reports the
+difference with an interval, plus how many stored days it would change the headline on.
 
-```bash
-make backtest-candidates   # every candidate against the served score
-make nazare                # the wave-ray tracer against the Nazaré canyon (eval group)
+| Candidate | Idea | Moves headline on |
+|---|---|---|
+| `size_period:typical` | Long-period swell breaks bigger (Komar & Gaughan) | 16% of days |
+| `dir_taper:45` | Open beaches take swell past the window edge, height cut by refraction | 13% |
+| `shadow:20` | Headlands diffract swell into their lee (OSM coastline) | 32% |
+| `rays:size` | Reverse ray tracing over EMODnet bathymetry gives size per direction × period | 37% |
+
+The tracer reproduces Snell's law, the Nazaré canyon's focusing and 16 local facts
+(`tests/test_rays_knowledge.py`). Out of scope: anything that needs the seabed at the
+break (sandbars, reef ledges); public bathymetry is ~100 m coarse there.
+
+## Deployment
+
+One image, one Postgres, on a small VPS (2 vCPU / 4 GB, Debian). The worker matters
+most: forecast history cannot be recovered later.
+
+1. Provider firewall: inbound 22 and ICMP only. Never 5432.
+2. Docker from Docker's apt repo; 2 GB swap.
+3. Clone, then generate the only required secret on the box:
+   ```bash
+   printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 32)" > .env && chmod 600 .env
+   ```
+4. `make host` — builds, migrates behind an advisory lock, fetches immediately.
+5. Backfill a year once:
+   `docker compose -f docker-compose.prod.yml exec worker gogo backfill --from 2025-09-01 --to 2026-09-03`
+6. Cron `scripts/backup.sh` nightly (verified dump, 14 kept, optional `GOGO_BACKUP_DEST`
+   rsync copy). Restore one once.
+7. Set `GOGO_HEARTBEAT_URL` to an external cron monitor; the alert is the ping stopping.
+
+**Reaching the page.** Private: `make host-web` on the box, `make tunnel` on the laptop.
+Use an SSH alias (`HOST=`, default `gogo`) defined in your own `~/.ssh/config`. Public:
+an `A` record, ports 80/443, `GOGO_DOMAIN` + `GOGO_WEB_SECRET` in `.env`, `make host-public`.
+An unset `GOGO_WEB_SECRET` means the page is off, not open.
+
+## Project Structure
+
+```text
+src/gogo/
+├── data/coast.yml        # the spots — edit here first
+├── data/rays.json        # traced refraction per spot (scripts/wave_rays.py)
+├── score.py              # pure, tested; SCORE_VERSION and ScoreOptions
+├── tide.py               # low / mid / high per tide cycle
+├── ingest/               # openmeteo.py forecast, archive.py reanalysis
+├── worker.py             # fetch_once, run_forever, backfill
+├── store.py              # Postgres
+├── serving.py            # pick a day, score it, record the impression
+├── api.py / schemas.py   # FastAPI; schemas.py generates the client's types
+├── web.py                # server-rendered login, app shell
+├── features.py           # what was knowable at an as-of
+├── eval/                 # dataset, metrics, baselines, candidates, backtest
+├── importer.py / demo.py # CSV labels / fixture labels
+└── migrations/           # numbered SQL, applied by gogo migrate
+web/                      # Vite + React + TS → src/gogo/static/app
+scripts/                  # backup, spot geometry, wave rays, tide check
+tests/                    # pytest against an isolated gogo_test database
 ```
 
-The candidates so far are physics, each validated before it touches a rank:
+## Roadmap
 
-- **Period-aware size.** A long swell breaks bigger than its offshore height says
-  (Komar & Gaughan: H^0.8 T^0.4); `size_period:typical` judges each hour against the
-  period usual for its height on this coast, so a typical day scores as before.
-- **Direction taper and headland shadow.** Soft window edges on open beaches, and a
-  diffraction-shaped loss behind headlands, from each spot's facing and shadow sectors
-  measured off the OpenStreetMap coastline (`scripts/spot_geometry.py`).
-- **Wave rays over the real seabed** (`scripts/wave_rays.py`). Reverse ray tracing over
-  EMODnet bathymetry gives, per spot, how much of an open-sea swell reaches it by
-  direction and period. It reproduces the Nazaré canyon's focusing, Snell's law on a
-  straight beach, and sixteen things locals know — Carcavelos gets about a third of a
-  north-west swell, Baleal and Supertubos swap places between north-west and south-west.
-  `rays:size` uses it for size and keeps each spot's window for direction, because rays
-  measure energy arriving, not whether it breaks well.
-
-Not attempted: anything that needs the seabed *at the break* — break depth with tide,
-hollow versus mushy. Public bathymetry is about 100 m coarse there and beach bars move
-with every swell.
-
-## Forecast notes
-
-- Marine: `cell_selection=sea`, `best_match`, `timezone=Europe/Lisbon`, `timeformat=unixtime`, `forecast_days=7`
-- Timestamps are timezone-aware **UTC** everywhere inside; Lisbon is rendered at the edges. `unixtime` avoids the ambiguous local hour on the autumn DST fold
-- Wind: weather API, knots, land cell
-- Tide is a **phase** (low / mid / high, per tide cycle) from `sea_level_height_msl`.
-  Checked against the Instituto Hidrográfico's official predictions at Cascais and
-  Peniche (`scripts/tide_check.py`): heights within 4 cm and the range within 2%, but
-  every high and low 32 minutes early, so each hour is read 32 minutes back. Uncorrected,
-  a quarter of surfable hours had the wrong phase
-- A cycle that finds nothing changed appends no snapshot, so `forecast_snapshots`
-  answers *what did we believe at T* but not *were we running at T*. `fetch_cycles`
-  answers the second. Measured on the box: 60 of 96 cycles stored nothing, and a
-  coverage query against snapshots alone reported 36 imaginary gaps
-- Six fields are **stored and not scored**: peak period, the combined sea (height and
-  period), and a secondary swell train. A forecast is the one thing the archive cannot
-  give back, so they are kept from today and left out of the score until the harness can
-  say whether they read the water better. Measured before adding them: peak period runs a
-  median 1.5 s above the mean period the score gates on, and the size gate disagrees with
-  the combined sea on 14% of hours — always in the same direction, vetoing as too small a
-  spot whose actual sea is in range
-- Peak period has a **shorter horizon than everything else**, about 69 h against 145 h.
-  A null there usually means "too far out", not "flat", and anything gating on it needs a
-  fallback to the mean period past day three
-- Nearby spots often share one wave-model cell. Ranking between two Ericeira reefs on the same hour comes from the spot file
-
-Free Open-Meteo is **non-commercial**, CC BY 4.0. Attribution is required. If this ever has ads or a paid plan, use their customer endpoint.
+| Next | Why |
+|---|---|
+| **~100 real labels** across several swell events | The Stage 1 gate; nothing below can be measured without them |
+| Ship or drop each candidate on its backtest number | The physics is built; labels decide it |
+| Daylight veto from sunrise/sunset | Replaces the fixed 06–20 placeholder |
+| Continuous tide (height + rate) | The three-phase proxy gives the score almost no intra-day resolution |
+| Evening go / no-go push | Web push, email fallback |
+| Public page: domain, accounts, invites | Invite-only is the anti-spam design |
+| Ensemble spread as shown uncertainty | Say when we don't know |
+| Group spec overlays over the global label pool | Private local knowledge, still backtestable |
 
 ## Attribution
 
-Forecasts from [Open-Meteo](https://open-meteo.com/) (CC BY 4.0), using national wave and weather models (Météo-France, DWD, ECMWF, NCEP, and others).
+Forecasts from [Open-Meteo](https://open-meteo.com/) (CC BY 4.0), using national wave and
+weather models (Météo-France, DWD, ECMWF, NCEP, and others). Free Open-Meteo is
+non-commercial; a paid plan or ads would need their customer endpoint.
