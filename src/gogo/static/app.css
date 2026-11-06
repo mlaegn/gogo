@@ -596,6 +596,51 @@ button:disabled { opacity: 0.55; }
   box-shadow: inset 0 2px 0 var(--gold);
 }
 
+/* Spot sheet: how a reef breaks, from wavesim. Leaflet stacks its panes up to z-index 1000,
+   so the map gets a stacking context of its own and stays under the fixed tab bar. */
+.sheet { margin: 1.6rem 0 0; }
+.sheet-map {
+  position: relative;
+  isolation: isolate;
+  z-index: 0;
+  height: 22rem;
+  margin: 0.45rem 0 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--card);
+}
+.sheet-map .leaflet-control-attribution { font-size: 0.62rem; }
+.sheet-map .leaflet-tooltip { font-family: var(--font); font-size: 0.78rem; }
+.sheet-picks { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0 0 0.45rem; }
+.sheet-picks button {
+  min-height: 2.2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dim);
+  font: inherit;
+  font-size: 0.84rem;
+}
+.sheet-picks button[aria-pressed="true"] { border-color: var(--gold); color: var(--ink); }
+.sheet-picks button small { margin-left: 0.25rem; }
+.sheet-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3rem 0.9rem;
+  margin: 0.8rem 0 0.9rem;
+  font-size: 0.88rem;
+}
+.sheet-facts dt { color: var(--dim); }
+.sheet-facts dd { margin: 0; }
+.sheet-legend { list-style: none; margin: 0 0 0.6rem; padding: 0; color: var(--dim); font-size: 0.78rem; }
+.sheet-legend li { display: flex; align-items: center; gap: 0.5rem; margin: 0.15rem 0; }
+.sheet-legend i { flex: none; width: 0.7rem; height: 0.7rem; border-radius: 50%; }
+.sheet-legend i.dot { background: #fff; box-shadow: 0 0 0 2px var(--bg); }
+.sheet-legend i.ring { border: 2px dashed var(--gold); }
+.sheet-note { color: var(--dim); font-size: 0.74rem; margin: 0; }
+
 @media (prefers-reduced-motion: reduce) {
   .refreshing { transition: none; }
 }

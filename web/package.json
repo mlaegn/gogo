@@ -14,11 +14,13 @@
     "types": "openapi-typescript ../openapi.json -o src/api/schema.d.ts"
   },
   "dependencies": {
+    "leaflet": "1.9.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.1.0"
   },
   "devDependencies": {
+    "@types/leaflet": "1.9.20",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",

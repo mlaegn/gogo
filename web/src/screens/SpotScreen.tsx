@@ -1,10 +1,14 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { DayStrip } from "../DayStrip";
 import { api } from "../api/client";
+import { hasSheet } from "../sheets";
 import { dayLabel, lisbonClock, lisbonNowLocal, nextClock, regionLabel, todayInLisbon } from "../format";
 import { useAsync } from "../useAsync";
+
+// The map and its data load only on a spot that has a sheet: Leaflet stays out of the main bundle.
+const SpotSheet = lazy(() => import("../SpotSheet"));
 
 export function SpotScreen() {
   const { spotId } = useParams();
@@ -99,6 +103,12 @@ export function SpotScreen() {
           );
         })}
       </ol>
+
+      {hasSheet(spot.id) && (
+        <Suspense fallback={null}>
+          <SpotSheet spotId={spot.id} />
+        </Suspense>
+      )}
 
       <Link className="cta" to={`/log?spot=${spot.id}&day=${shown}`}>
         Log a session here
