@@ -646,6 +646,8 @@ button:disabled { opacity: 0.55; }
 .sheet-scale { height: 0.6rem; border-radius: 999px; margin: 0.2rem 0 0.25rem; background-color: #0b1a26; }
 .sheet-scale-ticks { display: flex; justify-content: space-between; font-size: 0.72rem; }
 .sheet-legend p { margin: 0.4rem 0 0; }
+.sheet-loading { align-self: center; color: var(--dim); }
+.sheet-picks button.sheet-play { color: var(--ink); border-color: var(--dim); min-width: 4.5rem; }
 
 @media (prefers-reduced-motion: reduce) {
   .refreshing { transition: none; }

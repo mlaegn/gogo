@@ -3,7 +3,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useEffect, useRef, useState } from "react";
 
-import { type HeightMap, loadSheet, type Sheet } from "./sheets";
+import { type HeightMap, loadSheet, loopUrl, type Sheet, type WaveLoop } from "./sheets";
 import { useAsync } from "./useAsync";
 
 // The map is Portugal's 2023 satellite mosaic (DGT, 30 cm; its service states no fees and no
@@ -74,9 +74,7 @@ function decode(hm: HeightMap): Promise<Decoded> {
   let p = decoded.get(hm);
   if (!p) {
     p = (async () => {
-      const img = new Image();
-      img.src = `data:image/png;base64,${hm.png}`;
-      await img.decode();
+      const img = await loadImage(`data:image/png;base64,${hm.png}`);
       const w = img.naturalWidth;
       const h = img.naturalHeight;
       const canvas = document.createElement("canvas");
@@ -106,8 +104,96 @@ function decode(hm: HeightMap): Promise<Decoded> {
       return { url: canvas.toDataURL(), values, w, h };
     })();
     decoded.set(hm, p);
+    p.catch(() => decoded.delete(hm)); // a failure is tried again next time, not remembered
   }
   return p;
+}
+
+type Loop = { frames: Uint8ClampedArray[]; w: number; h: number };
+const loops = new WeakMap<WaveLoop, Promise<Loop>>();
+
+// The loop's PNG, fetched on first play, split into its frames' grey values.
+function decodeLoop(loop: WaveLoop): Promise<Loop> {
+  let p = loops.get(loop);
+  if (!p) {
+    p = (async () => {
+      const img = await loadImage(await loopUrl(loop.file));
+      const w = img.naturalWidth;
+      const h = img.naturalHeight / loop.frames;
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("no canvas");
+      ctx.drawImage(img, 0, 0);
+      const all = ctx.getImageData(0, 0, w, img.naturalHeight).data;
+      const frames = Array.from({ length: loop.frames }, (_, n) => {
+        const grey = new Uint8ClampedArray(w * h);
+        for (let k = 0; k < w * h; k++) grey[k] = all[(n * w * h + k) * 4]!;
+        return grey;
+      });
+      return { frames, w, h };
+    })();
+    loops.set(loop, p);
+    p.catch(() => loops.delete(loop));
+  }
+  return p;
+}
+
+// Leaflet's image overlay, drawing a canvas instead of loading an image.
+const CanvasOverlay = L.ImageOverlay.extend({
+  _initImage(this: { _url: unknown; _image: HTMLCanvasElement; _zoomAnimated: boolean }) {
+    const c = this._url as HTMLCanvasElement;
+    this._image = c;
+    L.DomUtil.addClass(c, "leaflet-image-layer");
+    if (this._zoomAnimated) L.DomUtil.addClass(c, "leaflet-zoom-animated");
+  },
+}) as unknown as new (canvas: HTMLCanvasElement, bounds: L.LatLngBoundsExpression, options?: L.ImageOverlayOptions) => L.ImageOverlay;
+
+// One frame of the moving wave: crests light, troughs dark, white water white. In between two
+// saved frames the surface level is blended, so the loop runs smoothly at any speed.
+function paintWave(out: ImageData, a: Uint8ClampedArray, b: Uint8ClampedArray, f: number, top: number, h0: number) {
+  const d = out.data;
+  for (let k = 0; k < a.length; k++) {
+    const va = a[k]!;
+    const vb = b[k]!;
+    const o = k * 4;
+    if (va === 0 || vb === 0) {
+      d[o + 3] = 0;
+      continue;
+    }
+    if ((f < 0.5 ? va : vb) >= 128) {
+      d[o] = 250;
+      d[o + 1] = 252;
+      d[o + 2] = 255;
+      d[o + 3] = 245;
+      continue;
+    }
+    const level = (1 - f) * (va & 127) + f * (vb & 127);
+    const eta = ((level - 1) / 126) * 2 * top - top;
+    if (eta >= 0) {
+      d[o] = 150;
+      d[o + 1] = 205;
+      d[o + 2] = 228;
+      d[o + 3] = Math.min(130, (eta / (0.6 * h0)) * 110);
+    } else {
+      d[o] = 2;
+      d[o + 1] = 14;
+      d[o + 2] = 26;
+      d[o + 3] = Math.min(150, (-eta / (0.6 * h0)) * 130);
+    }
+  }
+}
+
+// An image, loaded: the load event rather than img.decode(), which some browsers reject for a
+// page that is not on screen.
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("image did not load"));
+    img.src = src;
+  });
 }
 
 function pct(x: number | null | undefined) {
@@ -121,7 +207,7 @@ export default function SpotSheet({ spotId }: { spotId: string }) {
   return <SheetMap sheet={result.data} />;
 }
 
-type View = "breaks" | "height";
+type View = "breaks" | "height" | "wave";
 
 function SheetMap({ sheet }: { sheet: Sheet }) {
   const el = useRef<HTMLDivElement>(null);
@@ -135,12 +221,19 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
   const [view, setView] = useState<View>("breaks");
   const [heights, setHeights] = useState<Decoded | null>(null);
   const [reading, setReading] = useState<string | null>(null);
+  const [loop, setLoop] = useState<Loop | null>(null);
+  const [playing, setPlaying] = useState(
+    () => !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+  );
+  const [speed, setSpeed] = useState(1);
+  const phase = useRef(0); // where in the wave's period the loop is, kept across pause and speed
 
   const swell = sheet.swells[swellIdx] ?? sheet.swells[0];
   const row = swell?.rows.find((r) => r.from_deg === deg) ?? swell?.rows[0];
   const tideName = row && row.tides[tide] ? tide : Object.keys(row?.tides ?? {})[0] ?? "mid";
   const t = row?.tides[tideName];
   const hm = t?.height_map ?? null;
+  const wl = t?.loop ?? null;
 
   useEffect(() => {
     if (!el.current) return;
@@ -149,6 +242,8 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
     const bases = baseLayers();
     bases["DGT 2023"].addTo(m);
     L.control.layers(bases, undefined, { position: "topright" }).addTo(m);
+    // The height map and the moving wave go under the outline, dots and rings.
+    m.createPane("sheetImages").style.zIndex = "350";
     layer.current = L.layerGroup().addTo(m);
     map.current = m;
     return () => {
@@ -172,6 +267,55 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
       live = false;
     };
   }, [hm]);
+
+  // Fetch and split the loop of the run on show, once the wave view is open.
+  useEffect(() => {
+    let live = true;
+    setLoop(null);
+    if (view === "wave" && wl) {
+      decodeLoop(wl)
+        .then((d) => live && setLoop(d))
+        .catch(() => live && setLoop(null));
+    }
+    return () => {
+      live = false;
+    };
+  }, [view, wl]);
+
+  // Play it: one period of the swell every period_s / speed seconds.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || view !== "wave" || !wl || !loop || !swell) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = loop.w;
+    canvas.height = loop.h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const img = ctx.createImageData(loop.w, loop.h);
+    const overlay = new CanvasOverlay(canvas, wl.bounds, { interactive: false, className: "sheet-wave", pane: "sheetImages" }).addTo(m);
+    let raf = 0;
+    let last = performance.now();
+    const draw = (now: number) => {
+      // The first animation frame can be stamped a little before `last`: never step backwards.
+      const dt = Math.max(0, now - last) / 1000;
+      last = Math.max(last, now);
+      if (playing) phase.current = (phase.current + dt * (speed / wl.period_s)) % 1;
+      const x = phase.current * loop.frames.length;
+      const n0 = Math.floor(x) % loop.frames.length;
+      const a = loop.frames[n0];
+      const b = loop.frames[(n0 + 1) % loop.frames.length];
+      if (a && b) {
+        paintWave(img, a, b, x - Math.floor(x), wl.eta_top_m, swell.height_m);
+        ctx.putImageData(img, 0, 0);
+      }
+      if (playing) raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => {
+      cancelAnimationFrame(raf);
+      overlay.remove();
+    };
+  }, [view, wl, loop, swell, playing, speed]);
 
   // Tap or hover the height map to read it.
   useEffect(() => {
@@ -203,7 +347,7 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
     g.clearLayers();
 
     if (view === "height" && hm && heights) {
-      L.imageOverlay(heights.url, hm.bounds, { interactive: false, className: "sheet-heights" }).addTo(g);
+      L.imageOverlay(heights.url, hm.bounds, { interactive: false, className: "sheet-heights", pane: "sheetImages" }).addTo(g);
     }
     if (sheet.area) {
       L.polygon(sheet.area, { color: "#fff", weight: 1.2, dashArray: "5 6", fill: false, interactive: false }).addTo(g);
@@ -283,10 +427,27 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
         >
           Wave height
         </button>
+        <button type="button" aria-pressed={view === "wave"} disabled={!wl} onClick={() => setView("wave")}>
+          Moving wave
+        </button>
       </div>
       <div className="sheet-map" ref={el} />
       {view === "height" && (
         <p className="sheet-reading">{reading ?? "Tap the map to read the height there."}</p>
+      )}
+      {view === "wave" && (
+        <div className="sheet-picks" role="group" aria-label="Play">
+          <button type="button" className="sheet-play" onClick={() => setPlaying((p) => !p)}>
+            {playing ? "Pause" : "Play"}
+          </button>
+          <button type="button" aria-pressed={speed === 1} onClick={() => setSpeed(1)}>
+            Real time
+          </button>
+          <button type="button" aria-pressed={speed === 0.5} onClick={() => setSpeed(0.5)}>
+            Half speed
+          </button>
+          {!loop && <small className="sheet-loading">loading…</small>}
+        </div>
       )}
 
       {sheet.swells.length > 1 && (
@@ -340,7 +501,14 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
         </dd>
       </dl>
 
-      {view === "breaks" ? (
+      {view === "wave" ? (
+        <div className="sheet-legend">
+          <p>
+            Crests pale blue, troughs dark, white water white. One wave of a perfectly regular {swell.name} swell,
+            repeated: the real sea comes in sets, and this shows how each wave of it moves across the reef.
+          </p>
+        </div>
+      ) : view === "breaks" ? (
         <ul className="sheet-legend">
           <li><i style={{ background: ZONE, opacity: 0.6 }} />breaks on most waves</li>
           <li><i className="dot" />takeoff at this swell</li>
