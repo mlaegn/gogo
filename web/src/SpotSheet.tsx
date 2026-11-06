@@ -3,7 +3,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useEffect, useRef, useState } from "react";
 
-import { loadSheet, type Sheet } from "./sheets";
+import { type HeightMap, loadSheet, type Sheet } from "./sheets";
 import { useAsync } from "./useAsync";
 
 // The map is Portugal's 2023 satellite mosaic (DGT, 30 cm; its service states no fees and no
@@ -28,6 +28,88 @@ const ZONE = "#d4b483";
 const BREAK = "#9cc7e8";
 const ROCK = "#e0605a";
 
+// Wave height is magnitude, so one hue, gogo's gold, dark and faint to light and solid: on a
+// dark sea photo the bigger waves are the brighter ones.
+// At the swell's own height the photo shows through; the bigger, the brighter and more opaque.
+const RAMP: [number, [number, number, number], number][] = [
+  [0, [120, 90, 45], 0.04],
+  [0.5, [212, 180, 131], 0.5],
+  [1, [255, 246, 228], 0.88],
+];
+const LOW = 1; // ratios at or below this take the ramp's first colour
+const HIGH = 2; // and at or above this its last
+
+function ramp(ratio: number): [number, number, number, number] {
+  const t = Math.min(1, Math.max(0, (ratio - LOW) / (HIGH - LOW)));
+  for (let k = 1; k < RAMP.length; k++) {
+    const [t1, c1, a1] = RAMP[k]!;
+    const [t0, c0, a0] = RAMP[k - 1]!;
+    if (t <= t1) {
+      const f = (t - t0) / (t1 - t0);
+      return [
+        c0[0] + f * (c1[0] - c0[0]),
+        c0[1] + f * (c1[1] - c0[1]),
+        c0[2] + f * (c1[2] - c0[2]),
+        a0 + f * (a1 - a0),
+      ];
+    }
+  }
+  const [, c, a] = RAMP[RAMP.length - 1]!;
+  return [c[0], c[1], c[2], a];
+}
+
+function rampCss() {
+  const stops = [0, 0.25, 0.5, 0.75, 1].map((t) => {
+    const [r, g, b, a] = ramp(LOW + t * (HIGH - LOW));
+    return `rgba(${r | 0},${g | 0},${b | 0},${a.toFixed(2)}) ${t * 100}%`;
+  });
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
+}
+
+type Decoded = { url: string; values: Float32Array; w: number; h: number };
+const decoded = new WeakMap<HeightMap, Promise<Decoded>>();
+
+// The grey PNG to a coloured image, and its values kept for reading one off under a tap.
+function decode(hm: HeightMap): Promise<Decoded> {
+  let p = decoded.get(hm);
+  if (!p) {
+    p = (async () => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${hm.png}`;
+      await img.decode();
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("no canvas");
+      ctx.drawImage(img, 0, 0);
+      const px = ctx.getImageData(0, 0, w, h);
+      const values = new Float32Array(w * h);
+      for (let i = 0; i < w * h; i++) {
+        const grey = px.data[i * 4]!;
+        if (grey === 0) {
+          values[i] = NaN;
+          px.data[i * 4 + 3] = 0;
+          continue;
+        }
+        const v = ((grey - 1) / 254) * hm.top;
+        values[i] = v;
+        const [r, g, b, a] = ramp(v);
+        px.data[i * 4] = r;
+        px.data[i * 4 + 1] = g;
+        px.data[i * 4 + 2] = b;
+        px.data[i * 4 + 3] = Math.round(a * 255);
+      }
+      ctx.putImageData(px, 0, 0);
+      return { url: canvas.toDataURL(), values, w, h };
+    })();
+    decoded.set(hm, p);
+  }
+  return p;
+}
+
 function pct(x: number | null | undefined) {
   return x == null ? "—" : `${Math.round(100 * x)}%`;
 }
@@ -39,6 +121,8 @@ export default function SpotSheet({ spotId }: { spotId: string }) {
   return <SheetMap sheet={result.data} />;
 }
 
+type View = "breaks" | "height";
+
 function SheetMap({ sheet }: { sheet: Sheet }) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -48,11 +132,15 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
   const [swellIdx, setSwellIdx] = useState(0);
   const [deg, setDeg] = useState(320);
   const [tide, setTide] = useState("mid");
+  const [view, setView] = useState<View>("breaks");
+  const [heights, setHeights] = useState<Decoded | null>(null);
+  const [reading, setReading] = useState<string | null>(null);
 
   const swell = sheet.swells[swellIdx] ?? sheet.swells[0];
   const row = swell?.rows.find((r) => r.from_deg === deg) ?? swell?.rows[0];
   const tideName = row && row.tides[tide] ? tide : Object.keys(row?.tides ?? {})[0] ?? "mid";
   const t = row?.tides[tideName];
+  const hm = t?.height_map ?? null;
 
   useEffect(() => {
     if (!el.current) return;
@@ -70,35 +158,87 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
     };
   }, []);
 
+  // Decode the height map of the run on show, ready for the height view.
+  useEffect(() => {
+    let live = true;
+    setHeights(null);
+    setReading(null);
+    if (hm) {
+      decode(hm)
+        .then((d) => live && setHeights(d))
+        .catch(() => live && setHeights(null));
+    }
+    return () => {
+      live = false;
+    };
+  }, [hm]);
+
+  // Tap or hover the height map to read it.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || view !== "height" || !hm || !heights || !swell) return;
+    const [[s, w], [n, e]] = hm.bounds;
+    const read = (ev: L.LeafletMouseEvent) => {
+      const col = Math.floor(((ev.latlng.lng - w) / (e - w)) * heights.w);
+      const r = Math.floor(((n - ev.latlng.lat) / (n - s)) * heights.h);
+      const v = col >= 0 && col < heights.w && r >= 0 && r < heights.h ? heights.values[r * heights.w + col] : NaN;
+      setReading(
+        v === undefined || Number.isNaN(v)
+          ? null
+          : `${v.toFixed(1)}× the swell here: about ${(v * swell.height_m).toFixed(1)} m for this ${swell.height_m} m swell`,
+      );
+    };
+    m.on("click", read);
+    m.on("mousemove", read);
+    return () => {
+      m.off("click", read);
+      m.off("mousemove", read);
+    };
+  }, [view, hm, heights, swell]);
+
   useEffect(() => {
     const m = map.current;
     const g = layer.current;
     if (!m || !g || !swell || !t) return;
     g.clearLayers();
 
+    if (view === "height" && hm && heights) {
+      L.imageOverlay(heights.url, hm.bounds, { interactive: false, className: "sheet-heights" }).addTo(g);
+    }
     if (sheet.area) {
       L.polygon(sheet.area, { color: "#fff", weight: 1.2, dashArray: "5 6", fill: false, interactive: false }).addTo(g);
     }
-    for (const poly of t.zone) {
-      L.polygon(
-        poly.map((ring) => ring.map(([lon, lat]) => [lat, lon] as [number, number])),
-        { color: ZONE, weight: 1, fillColor: ZONE, fillOpacity: 0.38 },
-      ).addTo(g);
+    if (view === "breaks") {
+      for (const poly of t.zone) {
+        L.polygon(
+          poly.map((ring) => ring.map(([lon, lat]) => [lat, lon] as [number, number])),
+          { color: ZONE, weight: 1, fillColor: ZONE, fillOpacity: 0.38 },
+        ).addTo(g);
+      }
+      t.breaks.forEach(([lon, lat, h, d, rock], i) => {
+        if (i % 2) return; // every other row is plenty on a phone
+        L.circleMarker([lat, lon], {
+          radius: 1.5 + (1.4 * h) / swell.height_m,
+          weight: 0,
+          fillOpacity: 0.9,
+          fillColor: rock ? ROCK : BREAK,
+        })
+          .bindTooltip(`${h.toFixed(1)} m in ${d.toFixed(1)} m of water${rock ? ", onto the rock" : ""}`)
+          .addTo(g);
+      });
     }
-    t.breaks.forEach(([lon, lat, h, d, rock], i) => {
-      if (i % 2) return; // every other row is plenty on a phone
-      L.circleMarker([lat, lon], {
-        radius: 1.5 + (1.4 * h) / swell.height_m,
-        weight: 0,
-        fillOpacity: 0.9,
-        fillColor: rock ? ROCK : BREAK,
-      })
-        .bindTooltip(`${h.toFixed(1)} m in ${d.toFixed(1)} m of water${rock ? ", onto the rock" : ""}`)
-        .addTo(g);
-    });
+    // The reef's peaks, fainter the fewer runs they break first in.
     const runs = sheet.swells.reduce((n, s) => n + s.rows.reduce((k, r) => k + Object.keys(r.tides).length, 0), 0);
     for (const p of sheet.peaks.filter((p) => p.share >= 0.25)) {
-      L.circleMarker([p.lat, p.lon], { radius: 11, color: ZONE, weight: 2, dashArray: "3 3", fill: false })
+      const strength = Math.min(1, 0.3 + ((p.share - 0.25) / 0.3) * 0.7);
+      L.circleMarker([p.lat, p.lon], {
+        radius: 11,
+        color: ZONE,
+        weight: 2,
+        opacity: strength,
+        dashArray: "3 3",
+        fill: false,
+      })
         .bindTooltip(`a peak of the reef: breaks first here in ${Math.round(p.share * runs)} of ${runs} runs`)
         .addTo(g);
     }
@@ -121,7 +261,7 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
       m.fitBounds(bounds.pad(0.05));
       fitted.current = true;
     }
-  }, [sheet, swell, t]);
+  }, [sheet, swell, t, view, hm, heights]);
 
   if (!swell || !row || !t) return null;
   const n = t.near_takeoff;
@@ -131,7 +271,23 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
   return (
     <section className="sheet" aria-label="How the spot breaks">
       <p className="kicker">How it breaks</p>
+      <div className="sheet-picks" role="group" aria-label="Show">
+        <button type="button" aria-pressed={view === "breaks"} onClick={() => setView("breaks")}>
+          Where it breaks
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === "height"}
+          disabled={!hm}
+          onClick={() => setView("height")}
+        >
+          Wave height
+        </button>
+      </div>
       <div className="sheet-map" ref={el} />
+      {view === "height" && (
+        <p className="sheet-reading">{reading ?? "Tap the map to read the height there."}</p>
+      )}
 
       {sheet.swells.length > 1 && (
         <div className="sheet-picks" role="group" aria-label="Swell">
@@ -184,13 +340,29 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
         </dd>
       </dl>
 
-      <ul className="sheet-legend">
-        <li><i style={{ background: ZONE, opacity: 0.6 }} />breaks on most waves</li>
-        <li><i className="dot" />takeoff at this swell</li>
-        <li><i className="ring" />a peak of the reef at many swells</li>
-        <li><i style={{ background: BREAK }} />break points, bigger dot = bigger wave</li>
-        <li><i style={{ background: ROCK }} />reaches the rock unbroken</li>
-      </ul>
+      {view === "breaks" ? (
+        <ul className="sheet-legend">
+          <li><i style={{ background: ZONE, opacity: 0.6 }} />breaks on most waves</li>
+          <li><i className="dot" />takeoff at this swell</li>
+          <li><i className="ring" />a peak of the reef; fainter, at fewer swells</li>
+          <li><i style={{ background: BREAK }} />break points, bigger dot = bigger wave</li>
+          <li><i style={{ background: ROCK }} />reaches the rock unbroken</li>
+        </ul>
+      ) : (
+        <div className="sheet-legend">
+          <div className="sheet-scale" style={{ background: rampCss() }} aria-hidden="true" />
+          <div className="sheet-scale-ticks">
+            <span>as big as the swell</span>
+            <span>1.5×</span>
+            <span>{HIGH}× or more</span>
+          </div>
+          <p>
+            How big the waves get, over the swell offshore. Smoothed over about 30 m, because the swell
+            bouncing back off the rock lays stripes over it; so it reads a little lower than the height at the
+            break, which includes that bounce.
+          </p>
+        </div>
+      )}
       <p className="sheet-note">
         {sheet.note}. wavesim, run on {sheet.seabed.cell_m} m cells over the {sheet.seabed.source}; {sheet.generated}.
         Whether it barrels and which way it peels are left out until a finer seabed. Seabed:{" "}

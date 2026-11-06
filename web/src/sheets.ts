@@ -22,7 +22,12 @@ export type TideEntry = {
   breaks: BreakPoint[];
   // Polygons, each an outer ring then its holes, of [longitude, latitude] corners.
   zone: [number, number][][][];
+  height_map: HeightMap | null;
 };
+
+// The wave height over the swell's offshore height, smoothed over the reflection off the rock:
+// an 8-bit grey PNG on a latitude-longitude grid, 0 = no data, else 1 + ratio / top * 254.
+export type HeightMap = { bounds: [[number, number], [number, number]]; top: number; png: string };
 
 export type SheetRow = {
   from_deg: number;

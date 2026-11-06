@@ -640,6 +640,12 @@ button:disabled { opacity: 0.55; }
 .sheet-legend i.dot { background: #fff; box-shadow: 0 0 0 2px var(--bg); }
 .sheet-legend i.ring { border: 2px dashed var(--gold); }
 .sheet-note { color: var(--dim); font-size: 0.74rem; margin: 0; }
+.sheet-picks button:disabled { opacity: 0.4; }
+.sheet-map .sheet-heights { image-rendering: auto; }
+.sheet-reading { color: var(--ink); font-size: 0.84rem; margin: -0.3rem 0 0.7rem; min-height: 1.2rem; }
+.sheet-scale { height: 0.6rem; border-radius: 999px; margin: 0.2rem 0 0.25rem; background-color: #0b1a26; }
+.sheet-scale-ticks { display: flex; justify-content: space-between; font-size: 0.72rem; }
+.sheet-legend p { margin: 0.4rem 0 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .refreshing { transition: none; }
