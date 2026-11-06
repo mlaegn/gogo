@@ -109,7 +109,36 @@ function decode(hm: HeightMap): Promise<Decoded> {
   return p;
 }
 
-type Loop = { frames: Uint8ClampedArray[]; w: number; h: number };
+type Loop = { frames: Uint8ClampedArray[]; foam: Uint8ClampedArray[]; w: number; h: number };
+
+// The model flags only the front that is breaking; behind it the foam stays a few seconds,
+// fading. FOAM_LIFE_S is how long it takes to fade to a fifth.
+const FOAM_LIFE_S = 4;
+
+// Foam per frame (0-255): breaking now, or what was left of it a frame ago, fading. Round the
+// loop twice, so the first frames get the foam the last ones left.
+function foamOf(frames: Uint8ClampedArray[], periodS: number): Uint8ClampedArray[] {
+  const n = frames.length;
+  const keep = Math.pow(0.2, periodS / n / FOAM_LIFE_S);
+  const size = frames[0]?.length ?? 0;
+  const foam = frames.map(() => new Uint8ClampedArray(size));
+  let prev = new Float32Array(size);
+  for (let pass = 0; pass < 2; pass++) {
+    for (let k = 0; k < n; k++) {
+      const grey = frames[k]!;
+      const out = foam[k]!;
+      const next = new Float32Array(size);
+      for (let p = 0; p < size; p++) {
+        const g = grey[p]!;
+        const v = g === 0 ? 0 : g >= 128 ? 1 : prev[p]! * keep;
+        next[p] = v;
+        out[p] = Math.round(v * 255);
+      }
+      prev = next;
+    }
+  }
+  return foam;
+}
 const loops = new WeakMap<WaveLoop, Promise<Loop>>();
 
 // The loop's PNG, fetched on first play, split into its frames' grey values.
@@ -132,7 +161,7 @@ function decodeLoop(loop: WaveLoop): Promise<Loop> {
         for (let k = 0; k < w * h; k++) grey[k] = all[(n * w * h + k) * 4]!;
         return grey;
       });
-      return { frames, w, h };
+      return { frames, foam: foamOf(frames, loop.period_s), w, h };
     })();
     loops.set(loop, p);
     p.catch(() => loops.delete(loop));
@@ -150,9 +179,18 @@ const CanvasOverlay = L.ImageOverlay.extend({
   },
 }) as unknown as new (canvas: HTMLCanvasElement, bounds: L.LatLngBoundsExpression, options?: L.ImageOverlayOptions) => L.ImageOverlay;
 
-// One frame of the moving wave: crests light, troughs dark, white water white. In between two
-// saved frames the surface level is blended, so the loop runs smoothly at any speed.
-function paintWave(out: ImageData, a: Uint8ClampedArray, b: Uint8ClampedArray, f: number, top: number, h0: number) {
+// One frame of the moving wave: crests pale blue, troughs dark, white water and its foam white.
+// In between two saved frames everything is blended, so the loop runs smoothly at any speed.
+function paintWave(
+  out: ImageData,
+  a: Uint8ClampedArray,
+  b: Uint8ClampedArray,
+  foamA: Uint8ClampedArray,
+  foamB: Uint8ClampedArray,
+  f: number,
+  top: number,
+  h0: number,
+) {
   const d = out.data;
   for (let k = 0; k < a.length; k++) {
     const va = a[k]!;
@@ -162,26 +200,26 @@ function paintWave(out: ImageData, a: Uint8ClampedArray, b: Uint8ClampedArray, f
       d[o + 3] = 0;
       continue;
     }
-    if ((f < 0.5 ? va : vb) >= 128) {
-      d[o] = 250;
-      d[o + 1] = 252;
-      d[o + 2] = 255;
-      d[o + 3] = 245;
-      continue;
-    }
     const level = (1 - f) * (va & 127) + f * (vb & 127);
     const eta = ((level - 1) / 126) * 2 * top - top;
+    let r: number, g: number, bl: number, al: number;
     if (eta >= 0) {
-      d[o] = 150;
-      d[o + 1] = 205;
-      d[o + 2] = 228;
-      d[o + 3] = Math.min(130, (eta / (0.6 * h0)) * 110);
+      r = 178;
+      g = 222;
+      bl = 240;
+      al = Math.min(190, (eta / (0.45 * h0)) * 160);
     } else {
-      d[o] = 2;
-      d[o + 1] = 14;
-      d[o + 2] = 26;
-      d[o + 3] = Math.min(150, (-eta / (0.6 * h0)) * 130);
+      r = 2;
+      g = 14;
+      bl = 26;
+      al = Math.min(150, (-eta / (0.5 * h0)) * 130);
     }
+    // White water over it, fading with the foam.
+    const foam = ((1 - f) * foamA[k]! + f * foamB[k]!) / 255;
+    d[o] = r + (252 - r) * foam;
+    d[o + 1] = g + (253 - g) * foam;
+    d[o + 2] = bl + (255 - bl) * foam;
+    d[o + 3] = Math.max(al, foam * 240);
   }
 }
 
@@ -302,10 +340,13 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
       if (playing) phase.current = (phase.current + dt * (speed / wl.period_s)) % 1;
       const x = phase.current * loop.frames.length;
       const n0 = Math.floor(x) % loop.frames.length;
+      const n1 = (n0 + 1) % loop.frames.length;
       const a = loop.frames[n0];
-      const b = loop.frames[(n0 + 1) % loop.frames.length];
-      if (a && b) {
-        paintWave(img, a, b, x - Math.floor(x), wl.eta_top_m, swell.height_m);
+      const b = loop.frames[n1];
+      const fa = loop.foam[n0];
+      const fb = loop.foam[n1];
+      if (a && b && fa && fb) {
+        paintWave(img, a, b, fa, fb, x - Math.floor(x), wl.eta_top_m, swell.height_m);
         ctx.putImageData(img, 0, 0);
       }
       if (playing) raf = requestAnimationFrame(draw);
@@ -504,7 +545,7 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
       {view === "wave" ? (
         <div className="sheet-legend">
           <p>
-            Crests pale blue, troughs dark, white water white. One wave of a perfectly regular {swell.name} swell,
+            Crests pale blue, troughs dark, white water and its foam white. One wave of a perfectly regular {swell.name} swell,
             repeated: the real sea comes in sets, and this shows how each wave of it moves across the reef.
           </p>
         </div>
