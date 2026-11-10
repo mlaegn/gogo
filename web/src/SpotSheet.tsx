@@ -493,11 +493,15 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
 
       {sheet.swells.length > 1 && (
         <div className="sheet-picks" role="group" aria-label="Swell">
-          {sheet.swells.map((s, i) => (
-            <button key={s.name} type="button" aria-pressed={i === swellIdx} onClick={() => setSwellIdx(i)}>
-              {s.name}
-            </button>
-          ))}
+          {/* Smallest first; the sheet's first swell stays the one the map opens on. */}
+          {sheet.swells
+            .map((s, i) => [s, i] as const)
+            .sort(([a], [b]) => a.height_m - b.height_m)
+            .map(([s, i]) => (
+              <button key={s.name} type="button" aria-pressed={i === swellIdx} onClick={() => setSwellIdx(i)}>
+                {s.name}
+              </button>
+            ))}
         </div>
       )}
       <div className="sheet-picks" role="group" aria-label="Swell from">
@@ -535,7 +539,9 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
         <dt>Low tide</dt>
         <dd>
           {shift == null
-            ? "—"
+            ? Object.keys(row.tides).length === 1
+              ? `this swell is only modelled at ${tideName} tide`
+              : "—"
             : Math.abs(shift) < 5
               ? "breaks in about the same place"
               : `breaks ${Math.abs(Math.round(shift))} m further ${shift > 0 ? "out" : "in"}`}
