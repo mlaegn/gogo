@@ -470,6 +470,11 @@ function SheetMap({ sheet, forecast }: { sheet: Sheet; forecast?: Forecast }) {
   const nearSwell = near ? sheet.swells[near.swellIdx] : undefined;
   const degs = swell.rows.map((r) => r.from_deg);
   const sizes = sheet.swells.map((s) => s.height_m);
+  const periods = sheet.swells.map((s) => s.period_s);
+  const periodSpan =
+    Math.min(...periods) === Math.max(...periods)
+      ? `${Math.min(...periods)}`
+      : `${Math.min(...periods)}–${Math.max(...periods)}`;
   const notes = forecast
     ? [
         forecast.from_deg < Math.min(...degs) - 10 || forecast.from_deg > Math.max(...degs) + 10
@@ -477,6 +482,12 @@ function SheetMap({ sheet, forecast }: { sheet: Sheet; forecast?: Forecast }) {
           : null,
         forecast.height_m > 1.3 * Math.max(...sizes) ? "bigger than any run" : null,
         forecast.height_m < 0.75 * Math.min(...sizes) ? "smaller than any run" : null,
+        // A shorter swell bends less round the point and breaks differently from the runs.
+        forecast.period_s < Math.min(...periods) - 1.5
+          ? `a shorter period than any run, which are ${periodSpan} s`
+          : forecast.period_s > Math.max(...periods) + 2
+            ? `a longer period than any run, which are ${periodSpan} s`
+            : null,
       ].filter(Boolean)
     : [];
 
