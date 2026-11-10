@@ -178,6 +178,21 @@ def _closed_window(scored: list[HourScore]) -> WindowScore:
     )
 
 
+def spot_day(
+    spot: Spot,
+    hours: list[GridHour],
+    day: date,
+    not_before: datetime | None = None,
+    options: ScoreOptions = INCUMBENT,
+) -> list[tuple[HourForecast, HourScore]]:
+    """One spot's day, hour by hour, each hour's forecast beside its score. The detail
+    view shows the score; the spot's map opens on the forecast's swell."""
+    series = forecasts_from_grid(
+        [h for h in hours if (h.requested_lat, h.requested_lon) == (spot.lat, spot.lon)]
+    )
+    return [(h, score_hour(spot, h, options)) for h in _surfable_on(series, day, not_before)]
+
+
 def scored_hours(
     spot: Spot,
     hours: list[GridHour],
@@ -186,10 +201,7 @@ def scored_hours(
     options: ScoreOptions = INCUMBENT,
 ) -> list[HourScore]:
     """One spot's day, hour by hour. What the detail view shows behind a tap."""
-    series = forecasts_from_grid(
-        [h for h in hours if (h.requested_lat, h.requested_lon) == (spot.lat, spot.lon)]
-    )
-    return [score_hour(spot, h, options) for h in _surfable_on(series, day, not_before)]
+    return [s for _, s in spot_day(spot, hours, day, not_before, options)]
 
 
 def windows_for_day(

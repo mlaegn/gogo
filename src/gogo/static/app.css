@@ -647,6 +647,16 @@ button:disabled { opacity: 0.55; }
 .sheet-scale-ticks { display: flex; justify-content: space-between; font-size: 0.72rem; }
 .sheet-legend p { margin: 0.4rem 0 0; }
 .sheet-loading { align-self: center; color: var(--dim); }
+.sheet-forecast { color: var(--dim); font-size: 0.84rem; margin: 0 0 0.6rem; }
+.sheet-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .sheet-picks button.sheet-play { color: var(--ink); border-color: var(--dim); min-width: 4.5rem; }
 
 @media (prefers-reduced-motion: reduce) {

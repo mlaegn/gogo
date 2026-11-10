@@ -12,9 +12,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from gogo.assemble import available_days, scored_hours, windows_for_day
+from gogo.assemble import available_days, spot_day, windows_for_day
 from gogo.clock import now_utc
-from gogo.models import HourScore, Spot, WindowScore
+from gogo.models import HourForecast, HourScore, Spot, WindowScore
 from gogo.spots import load_spots
 from gogo.store import (
     connection,
@@ -75,9 +75,10 @@ def serve(day: date | None = None, surface: str | None = None) -> Served:
     return Served(day=chosen, days=days, windows=windows, as_of=as_of, spots=spots)
 
 
-def serve_spot(spot: Spot, day: date) -> list[HourScore]:
-    """One spot's day hour by hour. Not a recommendation, so nothing is recorded."""
+def serve_spot(spot: Spot, day: date) -> list[tuple[HourForecast, HourScore]]:
+    """One spot's day hour by hour, each forecast beside its score. Not a recommendation,
+    so nothing is recorded."""
     now = now_utc()
     with connection() as conn:
         hours = load_current_hours(conn, [spot])
-    return scored_hours(spot, hours, day, not_before=now)
+    return spot_day(spot, hours, day, not_before=now)

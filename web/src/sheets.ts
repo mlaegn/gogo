@@ -81,3 +81,36 @@ export function loadSheet(spotId: string): Promise<Sheet> {
   const load = files[`./sheets/${spotId}.json`];
   return load ? load() : Promise.reject(new Error(`no sheet for ${spotId}`));
 }
+
+// One forecast hour, as the spot page hands it to the map.
+export type Forecast = {
+  at_local: string;
+  height_m: number;
+  period_s: number;
+  from_deg: number;
+  tide: "low" | "mid" | "high" | null;
+};
+
+// The run the map shows: a swell (by its index in the sheet), a direction and a tide.
+export type Case = { swellIdx: number; deg: number; tide: string };
+
+// The run closest to a forecast hour. Size by ratio (1.5 m is nearer 1.2 than 2), the period
+// only to break a tie; the direction the nearest the swell has rows for; the tide the same
+// one, else mid for high (the runs stop at mid), else whichever the row has.
+export function nearestCase(sheet: Sheet, f: Forecast): Case {
+  const off = (s: Swell) => Math.abs(Math.log(f.height_m / s.height_m)) + 1e-6 * Math.abs(f.period_s - s.period_s);
+  let swellIdx = 0;
+  let best = Infinity;
+  sheet.swells.forEach((s, i) => {
+    if (off(s) < best) [swellIdx, best] = [i, off(s)];
+  });
+  const rows = sheet.swells[swellIdx]?.rows ?? [];
+  const row = rows.reduce<SheetRow | undefined>(
+    (best, r) => (!best || Math.abs(r.from_deg - f.from_deg) < Math.abs(best.from_deg - f.from_deg) ? r : best),
+    undefined,
+  );
+  const tides = Object.keys(row?.tides ?? {});
+  const want = f.tide === "high" ? "mid" : f.tide ?? "mid";
+  const tide = tides.includes(want) ? want : tides.includes("mid") ? "mid" : tides[0] ?? "mid";
+  return { swellIdx, deg: row?.from_deg ?? f.from_deg, tide };
+}

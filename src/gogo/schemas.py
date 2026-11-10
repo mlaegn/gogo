@@ -92,12 +92,23 @@ class SpotDetailOut(SpotOut):
     tides: list[TidePhase]
 
 
+class SwellOut(BaseModel):
+    """The hour's primary swell offshore, as the score reads it. The spot's map opens on
+    the nearest swell it has a model run for."""
+
+    height_m: float
+    period_s: float
+    from_deg: float
+
+
 class HourOut(BaseModel):
     valid_at: datetime
     at_local: str
     score: int
     verdict: Verdict
     reasons: list[ReasonOut]
+    swell: SwellOut
+    tide: TidePhase | None = None
 
 
 class SpotDayOut(BaseModel):

@@ -48,6 +48,9 @@ export function SpotScreen() {
     undefined,
   );
 
+  // The map opens on the hour opened above, else the day's best, else the first hour.
+  const mapHour = hours.find((h) => h.valid_at === openHour) ?? peak ?? hours[0];
+
   return (
     <div className={result.state === "refreshing" ? "refreshing" : undefined}>
       <p className="crumb">
@@ -106,7 +109,16 @@ export function SpotScreen() {
 
       {hasSheet(spot.id) && (
         <Suspense fallback={null}>
-          <SpotSheet spotId={spot.id} />
+          <SpotSheet
+            spotId={spot.id}
+            forecast={
+              mapHour && {
+                at_local: mapHour.at_local,
+                ...mapHour.swell,
+                tide: mapHour.tide ?? null,
+              }
+            }
+          />
         </Suspense>
       )}
 

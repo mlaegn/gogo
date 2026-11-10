@@ -203,6 +203,9 @@ export interface components {
             verdict: "no" | "maybe" | "go";
             /** Reasons */
             reasons: components["schemas"]["ReasonOut"][];
+            swell: components["schemas"]["SwellOut"];
+            /** Tide */
+            tide?: ("low" | "mid" | "high") | null;
         };
         /**
          * ObservationIn
@@ -344,6 +347,19 @@ export interface components {
              * @enum {string}
              */
             region: "ericeira" | "lisbon" | "peniche";
+        };
+        /**
+         * SwellOut
+         * @description The hour's primary swell offshore, as the score reads it. The spot's map opens on
+         *     the nearest swell it has a model run for.
+         */
+        SwellOut: {
+            /** Height M */
+            height_m: number;
+            /** Period S */
+            period_s: number;
+            /** From Deg */
+            from_deg: number;
         };
         /** ValidationError */
         ValidationError: {

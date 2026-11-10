@@ -172,3 +172,14 @@ def test_the_carried_features_survive_the_grid_to_forecast_step():
     assert h.swell_peak_period_s == 13.4
     assert (h.combined_height_m, h.combined_period_s) == (1.9, 7.2)
     assert (h.swell2_height_m, h.swell2_from_deg, h.swell2_period_s) == (0.6, 200, 8.1)
+
+
+def test_a_spot_day_carries_each_hours_forecast_beside_its_score():
+    """The spot's map opens on the hour's swell, so the detail view needs it with the score."""
+    from gogo.assemble import scored_hours, spot_day
+
+    grid = grid_day(DAY, RIBEIRA, 7, 11, swell_height_m=2.1, swell_from_deg=305)
+    day = spot_day(RIBEIRA[0], grid, DAY)
+    assert day and [s for _, s in day] == scored_hours(RIBEIRA[0], grid, DAY)
+    assert all(f.valid_at == s.valid_at for f, s in day)
+    assert {(f.swell_height_m, f.swell_from_deg, f.tide) for f, _ in day} == {(2.1, 305, "mid")}

@@ -3,7 +3,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useEffect, useRef, useState } from "react";
 
-import { type HeightMap, loadSheet, loopUrl, type Sheet, type WaveLoop } from "./sheets";
+import { type Forecast, type HeightMap, loadSheet, loopUrl, nearestCase, type Sheet, type WaveLoop } from "./sheets";
 import { useAsync } from "./useAsync";
 
 // The map is Portugal's 2023 satellite mosaic (DGT, 30 cm; its service states no fees and no
@@ -238,24 +238,37 @@ function pct(x: number | null | undefined) {
   return x == null ? "—" : `${Math.round(100 * x)}%`;
 }
 
-export default function SpotSheet({ spotId }: { spotId: string }) {
+// `forecast`, when given, is the hour the map opens on: it shows the run nearest that swell.
+export default function SpotSheet({ spotId, forecast }: { spotId: string; forecast?: Forecast }) {
   const result = useAsync(() => loadSheet(spotId), [spotId]);
   if (result.state === "loading") return null;
   if (result.state === "error") return null; // the page is whole without it
-  return <SheetMap sheet={result.data} />;
+  return <SheetMap sheet={result.data} forecast={forecast} />;
 }
+
+const fmt = (n: number) => (Math.round(n * 10) / 10).toString();
 
 type View = "breaks" | "height" | "wave";
 
-function SheetMap({ sheet }: { sheet: Sheet }) {
+function SheetMap({ sheet, forecast }: { sheet: Sheet; forecast?: Forecast }) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
   const fitted = useRef(false);
 
-  const [swellIdx, setSwellIdx] = useState(0);
-  const [deg, setDeg] = useState(320);
-  const [tide, setTide] = useState("mid");
+  const near = forecast ? nearestCase(sheet, forecast) : null;
+  const [swellIdx, setSwellIdx] = useState(near?.swellIdx ?? 0);
+  const [deg, setDeg] = useState(near?.deg ?? 320);
+  const [tide, setTide] = useState(near?.tide ?? "mid");
+  // Another hour picked on the page: move to its nearest run. Picks made on the map stay
+  // until then.
+  const nearKey = near && forecast ? `${forecast.at_local}|${near.swellIdx}|${near.deg}|${near.tide}` : "";
+  useEffect(() => {
+    if (!near) return;
+    setSwellIdx(near.swellIdx);
+    setDeg(near.deg);
+    setTide(near.tide);
+  }, [nearKey]);
   const [view, setView] = useState<View>("breaks");
   const [heights, setHeights] = useState<Decoded | null>(null);
   const [reading, setReading] = useState<string | null>(null);
@@ -453,9 +466,47 @@ function SheetMap({ sheet }: { sheet: Sheet }) {
   const shift = row.low_tide_seaward_m;
   const takeoffs = t.takeoffs.filter((p) => (p.stands_out_s ?? 0) >= 5).length;
 
+  const onNear = near !== null && near.swellIdx === swellIdx && near.deg === row.from_deg && near.tide === tideName;
+  const nearSwell = near ? sheet.swells[near.swellIdx] : undefined;
+  const degs = swell.rows.map((r) => r.from_deg);
+  const sizes = sheet.swells.map((s) => s.height_m);
+  const notes = forecast
+    ? [
+        forecast.from_deg < Math.min(...degs) - 10 || forecast.from_deg > Math.max(...degs) + 10
+          ? `the runs cover ${Math.min(...degs)}–${Math.max(...degs)}°`
+          : null,
+        forecast.height_m > 1.3 * Math.max(...sizes) ? "bigger than any run" : null,
+        forecast.height_m < 0.75 * Math.min(...sizes) ? "smaller than any run" : null,
+      ].filter(Boolean)
+    : [];
+
   return (
     <section className="sheet" aria-label="How the spot breaks">
       <p className="kicker">How it breaks</p>
+      {forecast && near && nearSwell && (
+        <p className="sheet-forecast">
+          Forecast at {forecast.at_local}: {fmt(forecast.height_m)} m, {Math.round(forecast.period_s)} s from{" "}
+          {Math.round(forecast.from_deg)}°{forecast.tide ? `, ${forecast.tide} tide` : ""}.{" "}
+          {onNear ? (
+            <>
+              The map shows the closest run: {nearSwell.name} from {near.deg}°, {near.tide} tide
+              {notes.length ? ` (${notes.join("; ")})` : ""}.
+            </>
+          ) : (
+            <button
+              type="button"
+              className="sheet-link"
+              onClick={() => {
+                setSwellIdx(near.swellIdx);
+                setDeg(near.deg);
+                setTide(near.tide);
+              }}
+            >
+              Show the closest run
+            </button>
+          )}
+        </p>
+      )}
       <div className="sheet-picks" role="group" aria-label="Show">
         <button type="button" aria-pressed={view === "breaks"} onClick={() => setView("breaks")}>
           Where it breaks

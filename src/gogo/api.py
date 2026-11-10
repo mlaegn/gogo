@@ -18,6 +18,7 @@ from gogo.schemas import (
     SpotDayOut,
     SpotDetailOut,
     SpotOut,
+    SwellOut,
     WindowOut,
     WindowsOut,
 )
@@ -153,8 +154,14 @@ def spot_day(spot_id: str, day: date | None = None) -> SpotDayOut:
                 score=h.score,
                 verdict=h.verdict,
                 reasons=[r.model_dump() for r in h.reasons],
+                swell=SwellOut(
+                    height_m=f.swell_height_m,
+                    period_s=f.swell_period_s,
+                    from_deg=f.swell_from_deg,
+                ),
+                tide=f.tide,
             )
-            for h in serve_spot(spot, served.day)
+            for f, h in serve_spot(spot, served.day)
         ],
     )
 
