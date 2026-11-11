@@ -3,7 +3,20 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useEffect, useRef, useState } from "react";
 
-import { type Forecast, type HeightMap, loadSheet, loopUrl, nearestCase, type Sheet, type WaveLoop } from "./sheets";
+import {
+  checks,
+  consequences,
+  type Forecast,
+  type HeightMap,
+  loadSheet,
+  loopUrl,
+  nearestCase,
+  nearestRow,
+  nearestTide,
+  runPeriod,
+  type Sheet,
+  type WaveLoop,
+} from "./sheets";
 import { useAsync } from "./useAsync";
 
 // The map is Portugal's 2023 satellite mosaic (DGT, 30 cm; its service states no fees and no
@@ -238,19 +251,25 @@ function pct(x: number | null | undefined) {
   return x == null ? "—" : `${Math.round(100 * x)}%`;
 }
 
-// `forecast`, when given, is the hour the map opens on: it shows the run nearest that swell.
-export default function SpotSheet({ spotId, forecast }: { spotId: string; forecast?: Forecast }) {
+// `forecast`, when given, is the hour the map opens on: it shows the run nearest that swell,
+// and says how near. `dayName` is the forecast's day as the page names it ("Today").
+//
+// The page is laid out as if each day's own swell had its run, which is the aim: the hour on
+// top, a check per thing that changes how it breaks, then the map. Today the runs are a few
+// example swells, so the checks say how far the closest one is; with a run per day they would
+// all pass and nothing else on the page would change. The example swells stay to explore.
+export default function SpotSheet({ spotId, forecast, dayName }: { spotId: string; forecast?: Forecast; dayName?: string }) {
   const result = useAsync(() => loadSheet(spotId), [spotId]);
   if (result.state === "loading") return null;
   if (result.state === "error") return null; // the page is whole without it
-  return <SheetMap sheet={result.data} forecast={forecast} />;
+  return <SheetMap sheet={result.data} forecast={forecast} dayName={dayName} />;
 }
 
 const fmt = (n: number) => (Math.round(n * 10) / 10).toString();
 
 type View = "breaks" | "height" | "wave";
 
-function SheetMap({ sheet, forecast }: { sheet: Sheet; forecast?: Forecast }) {
+function SheetMap({ sheet, forecast, dayName }: { sheet: Sheet; forecast?: Forecast; dayName?: string }) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
@@ -467,56 +486,70 @@ function SheetMap({ sheet, forecast }: { sheet: Sheet; forecast?: Forecast }) {
   const takeoffs = t.takeoffs.filter((p) => (p.stands_out_s ?? 0) >= 5).length;
 
   const onNear = near !== null && near.swellIdx === swellIdx && near.deg === row.from_deg && near.tide === tideName;
-  const nearSwell = near ? sheet.swells[near.swellIdx] : undefined;
-  const degs = swell.rows.map((r) => r.from_deg);
-  const sizes = sheet.swells.map((s) => s.height_m);
-  const periods = sheet.swells.map((s) => s.period_s);
-  const periodSpan =
-    Math.min(...periods) === Math.max(...periods)
-      ? `${Math.min(...periods)}`
-      : `${Math.min(...periods)}–${Math.max(...periods)}`;
-  const notes = forecast
-    ? [
-        forecast.from_deg < Math.min(...degs) - 10 || forecast.from_deg > Math.max(...degs) + 10
-          ? `the runs cover ${Math.min(...degs)}–${Math.max(...degs)}°`
-          : null,
-        forecast.height_m > 1.3 * Math.max(...sizes) ? "bigger than any run" : null,
-        forecast.height_m < 0.75 * Math.min(...sizes) ? "smaller than any run" : null,
-        // A shorter swell bends less round the point and breaks differently from the runs.
-        forecast.period_s < Math.min(...periods) - 1.5
-          ? `a shorter period than any run, which are ${periodSpan} s`
-          : forecast.period_s > Math.max(...periods) + 2
-            ? `a longer period than any run, which are ${periodSpan} s`
-            : null,
-      ].filter(Boolean)
-    : [];
+  // The chips that match the hour: its nearest swell, and within the swell on show its
+  // nearest direction and, within that, its nearest tide.
+  const todayDeg = forecast ? nearestRow(swell.rows, forecast)?.from_deg : undefined;
+  const todayTide = forecast ? nearestTide(row, forecast) : undefined;
+  const backToToday = () => {
+    if (!near) return;
+    setSwellIdx(near.swellIdx);
+    setDeg(near.deg);
+    setTide(near.tide);
+  };
+  const checkList = forecast ? checks(forecast, swell, row.from_deg, tideName) : [];
+  const meaning = forecast ? consequences(forecast, swell, row.from_deg, tideName) : [];
+  const exact = checkList.length > 0 && checkList.every((c) => c.ok !== false);
+  const peakT = forecast?.peak_period_s;
+  const periodText = forecast
+    ? peakT != null && Math.abs(peakT - forecast.period_s) >= 0.5
+      ? `${Math.round(peakT)} s (${Math.round(forecast.period_s)} s average)`
+      : `${Math.round(runPeriod(forecast))} s`
+    : "";
+  const today = <small className="sheet-today-mark">{dayName === "Today" ? "today" : "forecast"}</small>;
 
   return (
     <section className="sheet" aria-label="How the spot breaks">
-      <p className="kicker">How it breaks</p>
-      {forecast && near && nearSwell && (
-        <p className="sheet-forecast">
-          Forecast at {forecast.at_local}: {fmt(forecast.height_m)} m, {Math.round(forecast.period_s)} s from{" "}
-          {Math.round(forecast.from_deg)}°{forecast.tide ? `, ${forecast.tide} tide` : ""}.{" "}
-          {onNear ? (
-            <>
-              The map shows the closest run: {nearSwell.name} from {near.deg}°, {near.tide} tide
-              {notes.length ? ` (${notes.join("; ")})` : ""}.
-            </>
-          ) : (
-            <button
-              type="button"
-              className="sheet-link"
-              onClick={() => {
-                setSwellIdx(near.swellIdx);
-                setDeg(near.deg);
-                setTide(near.tide);
-              }}
-            >
-              Show the closest run
-            </button>
-          )}
-        </p>
+      <p className="kicker">
+        How it breaks <span className="sheet-pilot">Pilot</span>
+      </p>
+      {forecast && (
+        <div className="sheet-today">
+          <p className="sheet-today-head">
+            <strong>
+              {dayName ?? "Forecast"} {forecast.at_local}
+            </strong>{" "}
+            · {fmt(forecast.height_m)} m · {periodText} · from {Math.round(forecast.from_deg)}°
+            {forecast.tide ? ` · ${forecast.tide} tide` : ""}
+            <small> Tap an hour above to change.</small>
+          </p>
+          <ul className="sheet-checks" aria-label="How close the map is to this hour's swell">
+            {checkList.map((c) => (
+              <li key={c.what} className={c.ok === null ? "unknown" : c.ok ? "ok" : "off"}>
+                <span aria-hidden="true">{c.ok === null ? "–" : c.ok ? "✓" : "!"}</span>
+                <b>{c.what}</b> {c.today}
+                {c.ok ? "" : <> · map {c.run}</>}
+                <span className="sr-only">{c.ok === null ? ", not known" : c.ok ? ", close" : ", differs"}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="sheet-today-says">
+            {onNear
+              ? exact
+                ? `Showing the closest modelled example, close to this swell on every count: ${swell.name} from ${row.from_deg}°, ${tideName} tide.`
+                : `Showing the closest modelled example: ${swell.name} from ${row.from_deg}°, ${tideName} tide.`
+              : `Showing a swell you picked: ${swell.name} from ${row.from_deg}°, ${tideName} tide.`}{" "}
+            {meaning.map((m) => `${m}.`).join(" ")}{" "}
+            {!onNear && near && (
+              <button type="button" className="sheet-link" onClick={backToToday}>
+                {dayName === "Today" ? "Back to today" : "Back to the forecast"}
+              </button>
+            )}
+          </p>
+          <p className="sheet-today-pilot">
+            The aim is a map run for each day's own swell. For now a few example swells are modelled, and the map shows the
+            closest.
+          </p>
+        </div>
       )}
       <div className="sheet-picks" role="group" aria-label="Show">
         <button type="button" aria-pressed={view === "breaks"} onClick={() => setView("breaks")}>
@@ -553,6 +586,7 @@ function SheetMap({ sheet, forecast }: { sheet: Sheet; forecast?: Forecast }) {
         </div>
       )}
 
+      <p className="sheet-explore">Explore other swells</p>
       {sheet.swells.length > 1 && (
         <div className="sheet-picks" role="group" aria-label="Swell">
           {/* Smallest first; the sheet's first swell stays the one the map opens on. */}
@@ -562,6 +596,7 @@ function SheetMap({ sheet, forecast }: { sheet: Sheet; forecast?: Forecast }) {
             .map(([s, i]) => (
               <button key={s.name} type="button" aria-pressed={i === swellIdx} onClick={() => setSwellIdx(i)}>
                 {s.name}
+                {near?.swellIdx === i && today}
               </button>
             ))}
         </div>
@@ -570,6 +605,7 @@ function SheetMap({ sheet, forecast }: { sheet: Sheet; forecast?: Forecast }) {
         {swell.rows.map((r) => (
           <button key={r.from_deg} type="button" aria-pressed={r.from_deg === row.from_deg} onClick={() => setDeg(r.from_deg)}>
             {r.from_deg}°
+            {r.from_deg === todayDeg && today}
           </button>
         ))}
       </div>
@@ -577,6 +613,7 @@ function SheetMap({ sheet, forecast }: { sheet: Sheet; forecast?: Forecast }) {
         {Object.entries(row.tides).map(([name, e]) => (
           <button key={name} type="button" aria-pressed={name === tideName} onClick={() => setTide(name)}>
             {name} tide <small>{e.tide_m >= 0 ? "+" : ""}{e.tide_m} m</small>
+            {forecast && name === todayTide && today}
           </button>
         ))}
       </div>

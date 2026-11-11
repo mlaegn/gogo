@@ -111,6 +111,7 @@ export function SpotScreen() {
         <Suspense fallback={null}>
           <SpotSheet
             spotId={spot.id}
+            dayName={dayLabel(shown, today)}
             forecast={
               mapHour && {
                 at_local: mapHour.at_local,

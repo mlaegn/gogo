@@ -157,6 +157,7 @@ def spot_day(spot_id: str, day: date | None = None) -> SpotDayOut:
                 swell=SwellOut(
                     height_m=f.swell_height_m,
                     period_s=f.swell_period_s,
+                    peak_period_s=f.swell_peak_period_s,
                     from_deg=f.swell_from_deg,
                 ),
                 tide=f.tide,

@@ -647,7 +647,59 @@ button:disabled { opacity: 0.55; }
 .sheet-scale-ticks { display: flex; justify-content: space-between; font-size: 0.72rem; }
 .sheet-legend p { margin: 0.4rem 0 0; }
 .sheet-loading { align-self: center; color: var(--dim); }
-.sheet-forecast { color: var(--dim); font-size: 0.84rem; margin: 0 0 0.6rem; }
+/* The hour on top of the map: its swell, a check per factor, what the differences mean. */
+.sheet-pilot {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  letter-spacing: 0.12em;
+  font-size: 0.6rem;
+  vertical-align: 0.1em;
+}
+.sheet-today {
+  margin: 0.2rem 0 0.7rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--card);
+  font-size: 0.86rem;
+}
+.sheet-today p { margin: 0; }
+.sheet-today-head small { display: block; color: var(--dim); font-size: 0.76rem; margin-top: 0.1rem; }
+.sheet-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.4rem;
+  margin: 0.55rem 0;
+  padding: 0;
+  list-style: none;
+}
+.sheet-checks li {
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+.sheet-checks li > span[aria-hidden] { display: inline-block; width: 0.9rem; font-weight: 700; }
+.sheet-checks li.ok > span[aria-hidden] { color: var(--gold); }
+.sheet-checks li.off { border-color: var(--maybe); }
+.sheet-checks li.off > span[aria-hidden] { color: var(--maybe); }
+.sheet-checks li.unknown > span[aria-hidden] { color: var(--dim); }
+.sheet-checks b { font-weight: 600; }
+.sheet-today-says { color: var(--ink); }
+.sheet-today-pilot { color: var(--dim); font-size: 0.76rem; margin-top: 0.45rem !important; }
+.sheet-explore { color: var(--dim); font-size: 0.78rem; margin: 0.6rem 0 0.35rem; }
+.sheet-today-mark { color: var(--gold); }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 .sheet-link {
   padding: 0;
   border: 0;

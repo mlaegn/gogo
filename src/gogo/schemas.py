@@ -94,10 +94,12 @@ class SpotDetailOut(SpotOut):
 
 class SwellOut(BaseModel):
     """The hour's primary swell offshore, as the score reads it. The spot's map opens on
-    the nearest swell it has a model run for."""
+    the nearest swell it has a model run for. `period_s` is the mean period;
+    `peak_period_s` the peak, which is what the model runs' fixed period compares with."""
 
     height_m: float
     period_s: float
+    peak_period_s: float | None = None
     from_deg: float
 
 
