@@ -49,7 +49,8 @@ export function SpotScreen() {
   );
 
   // The map opens on the hour opened above, else the day's best, else the first hour.
-  const mapHour = hours.find((h) => h.valid_at === openHour) ?? peak ?? hours[0];
+  const opened = hours.find((h) => h.valid_at === openHour);
+  const mapHour = opened ?? peak ?? hours[0];
 
   return (
     <div className={result.state === "refreshing" ? "refreshing" : undefined}>
@@ -112,6 +113,15 @@ export function SpotScreen() {
           <SpotSheet
             spotId={spot.id}
             dayName={dayLabel(shown, today)}
+            hourWhy={
+              opened
+                ? "opened"
+                : mapHour === peak
+                  ? "best"
+                  : shown === today && mapHour === hours[0]
+                    ? "next"
+                    : "opened"
+            }
             forecast={
               mapHour && {
                 at_local: mapHour.at_local,

@@ -666,12 +666,17 @@ button:disabled { opacity: 0.55; }
   font-size: 0.86rem;
 }
 .sheet-today p { margin: 0; }
-.sheet-today-head small { display: block; color: var(--dim); font-size: 0.76rem; margin-top: 0.1rem; }
+.sheet-today-when { color: var(--gold); font-size: 0.8rem; font-weight: 600; }
+.sheet-today-swell { color: var(--ink); font-size: 1.7rem; font-weight: 600; line-height: 1.2; margin: 0.1rem 0 !important; }
+.sheet-today-swell i { color: var(--dim); font-style: normal; font-weight: 400; margin: 0 0.35rem; }
+.sheet-today-sub { color: var(--dim); font-size: 0.78rem; }
+.sheet-today-map { margin-top: 0.65rem; padding-top: 0.6rem; border-top: 1px solid var(--line); color: var(--dim); }
+.sheet-today-map b { color: var(--ink); font-weight: 500; }
 .sheet-checks {
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem 0.4rem;
-  margin: 0.55rem 0;
+  margin: 0.45rem 0;
   padding: 0;
   list-style: none;
 }
@@ -690,7 +695,19 @@ button:disabled { opacity: 0.55; }
 .sheet-checks b { font-weight: 600; }
 .sheet-today-says { color: var(--ink); }
 .sheet-today-pilot { color: var(--dim); font-size: 0.76rem; margin-top: 0.45rem !important; }
-.sheet-explore { color: var(--dim); font-size: 0.78rem; margin: 0.6rem 0 0.35rem; }
+.sheet-explore {
+  display: block;
+  margin: 0.15rem 0 0.5rem;
+  padding: 0.3rem 0;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.sheet-explore::after { content: " ▾"; }
+.sheet-explore[aria-expanded="true"]::after { content: " ▴"; }
 .sheet-today-mark { color: var(--gold); }
 .sr-only {
   position: absolute;
