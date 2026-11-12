@@ -695,19 +695,28 @@ button:disabled { opacity: 0.55; }
 .sheet-checks b { font-weight: 600; }
 .sheet-today-says { color: var(--ink); }
 .sheet-today-pilot { color: var(--dim); font-size: 0.76rem; margin-top: 0.45rem !important; }
-.sheet-explore {
-  display: block;
-  margin: 0.15rem 0 0.5rem;
-  padding: 0.3rem 0;
+/* Two ways to use the map: the hour picked above, or the modelled swells to compare. */
+.sheet-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0.15rem 0 0.6rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.sheet-modes button {
+  min-height: 2.3rem;
   border: 0;
-  background: none;
-  color: var(--gold);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dim);
   font: inherit;
-  font-size: 0.84rem;
+  font-size: 0.88rem;
   cursor: pointer;
 }
-.sheet-explore::after { content: " ▾"; }
-.sheet-explore[aria-expanded="true"]::after { content: " ▴"; }
+.sheet-modes button[aria-pressed="true"] { background: var(--line); color: var(--ink); font-weight: 600; }
+.sheet-today-short { padding: 0.55rem 0.8rem; }
+.sheet-today-short .sheet-today-map { margin-top: 0.45rem; padding-top: 0.45rem; }
 .sheet-today-mark { color: var(--gold); }
 .sr-only {
   position: absolute;

@@ -313,7 +313,9 @@ function SheetMap({
     setTide(near.tide);
   }, [nearKey]);
   const [view, setView] = useState<View>("breaks");
-  const [exploring, setExploring] = useState(false);
+  // "hour": the map is the run closest to the hour picked above. "compare": the modelled
+  // swells to look through, the hour kept in one line for reference.
+  const [mode, setMode] = useState<"hour" | "compare">("hour");
   const [heights, setHeights] = useState<Decoded | null>(null);
   const [reading, setReading] = useState<string | null>(null);
   const [loop, setLoop] = useState<Loop | null>(null);
@@ -549,8 +551,31 @@ function SheetMap({
       : hourWhy === "next"
         ? `${day} · next hour, ${forecast?.at_local}`
         : `${day} · ${forecast?.at_local}`;
-  // The menu folds away while the map shows the hour's own run; open while a pick is on show.
-  const menuOpen = !forecast || exploring || !onNear;
+  const menuOpen = !forecast || mode === "compare";
+  const hourLine = forecast && (
+    <>
+      {fmt(forecast.height_m)} m · {Math.round(runPeriod(forecast))} s · {Math.round(forecast.from_deg)}°
+      {forecast.tide ? ` · ${forecast.tide} tide` : ""}
+    </>
+  );
+  const checkPills = (
+    <ul className="sheet-checks" aria-label="How close the map is to this hour's swell">
+      {checkList.map((c) => (
+        <li key={c.what} className={c.ok === null ? "unknown" : c.ok ? "ok" : "off"}>
+          <span aria-hidden="true">{c.ok === null ? "–" : c.ok ? "✓" : "!"}</span>
+          {c.what.toLowerCase()}
+          <span className="sr-only">
+            {c.ok === null ? ": not known" : c.ok ? ": close" : `: ${c.today} this hour, ${c.run} on the map`}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+  const mapLine = (
+    <b>
+      {swell.height_m} m · {swell.period_s} s · {row.from_deg}° · {tideName} tide
+    </b>
+  );
 
   return (
     <section className="sheet" aria-label="How the spot breaks">
@@ -558,6 +583,23 @@ function SheetMap({
         How it breaks <span className="sheet-pilot">Pilot</span>
       </p>
       {forecast && (
+        <div className="sheet-modes" role="group" aria-label="The map shows">
+          <button
+            type="button"
+            aria-pressed={mode === "hour"}
+            onClick={() => {
+              setMode("hour");
+              backToToday();
+            }}
+          >
+            This hour
+          </button>
+          <button type="button" aria-pressed={mode === "compare"} onClick={() => setMode("compare")}>
+            Compare swells
+          </button>
+        </div>
+      )}
+      {forecast && mode === "hour" && (
         <div className="sheet-today">
           <p className="sheet-today-when">{when}</p>
           <p className="sheet-today-swell">
@@ -577,21 +619,9 @@ function SheetMap({
           <div className="sheet-today-map">
             <p>
               {onNear ? "The map below is the closest example we've modelled:" : "The map below is a swell you picked:"}{" "}
-              <b>
-                {swell.height_m} m · {swell.period_s} s · {row.from_deg}° · {tideName} tide
-              </b>
+              {mapLine}
             </p>
-            <ul className="sheet-checks" aria-label="How close the map is to this hour's swell">
-              {checkList.map((c) => (
-                <li key={c.what} className={c.ok === null ? "unknown" : c.ok ? "ok" : "off"}>
-                  <span aria-hidden="true">{c.ok === null ? "–" : c.ok ? "✓" : "!"}</span>
-                  {c.what.toLowerCase()}
-                  <span className="sr-only">
-                    {c.ok === null ? ": not known" : c.ok ? ": close" : `: ${c.today} this hour, ${c.run} on the map`}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {checkPills}
             <p className="sheet-today-says">
               {exact ? "Close to this hour's swell on every count." : meaning.map((m) => `${m}.`).join(" ")}{" "}
               {!onNear && near && (
@@ -607,53 +637,23 @@ function SheetMap({
           </p>
         </div>
       )}
-      <div className="sheet-picks" role="group" aria-label="Show">
-        <button type="button" aria-pressed={view === "breaks"} onClick={() => setView("breaks")}>
-          Where it breaks
-        </button>
-        <button
-          type="button"
-          aria-pressed={view === "height"}
-          disabled={!hm}
-          onClick={() => setView("height")}
-        >
-          Wave height
-        </button>
-        <button type="button" aria-pressed={view === "wave"} disabled={!wl} onClick={() => setView("wave")}>
-          Moving wave
-        </button>
-      </div>
-      <div className="sheet-map" ref={el} />
-      {view === "height" && (
-        <p className="sheet-reading">{reading ?? "Tap the map to read the height there."}</p>
-      )}
-      {view === "wave" && (
-        <div className="sheet-picks" role="group" aria-label="Play">
-          <button type="button" className="sheet-play" onClick={() => setPlaying((p) => !p)}>
-            {playing ? "Pause" : "Play"}
-          </button>
-          <button type="button" aria-pressed={speed === 1} onClick={() => setSpeed(1)}>
-            Real time
-          </button>
-          <button type="button" aria-pressed={speed === 0.5} onClick={() => setSpeed(0.5)}>
-            Half speed
-          </button>
-          {!loop && <small className="sheet-loading">loading…</small>}
+      {forecast && mode === "compare" && (
+        <div className="sheet-today sheet-today-short">
+          <p>
+            <span className="sheet-today-when">{when}:</span> {hourLine}
+          </p>
+          <div className="sheet-today-map">
+            <p>
+              {onNear ? "On the map, the closest example:" : "On the map:"} {mapLine}
+            </p>
+            {checkPills}
+            {!onNear && near && (
+              <button type="button" className="sheet-link" onClick={backToToday}>
+                Show the closest to this hour
+              </button>
+            )}
+          </div>
         </div>
-      )}
-
-      {forecast && (
-        <button
-          type="button"
-          className="sheet-explore"
-          aria-expanded={menuOpen}
-          onClick={() => {
-            if (menuOpen && !onNear) backToToday();
-            setExploring(!menuOpen);
-          }}
-        >
-          {menuOpen ? "Hide the other modelled swells" : "Explore the other modelled swells"}
-        </button>
       )}
       {menuOpen && sheet.swells.length > 1 && (
         <div className="sheet-picks" role="group" aria-label="Swell">
@@ -688,6 +688,40 @@ function SheetMap({
             ))}
           </div>
         </>
+      )}
+      <div className="sheet-picks" role="group" aria-label="Show">
+        <button type="button" aria-pressed={view === "breaks"} onClick={() => setView("breaks")}>
+          Where it breaks
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === "height"}
+          disabled={!hm}
+          onClick={() => setView("height")}
+        >
+          Wave height
+        </button>
+        <button type="button" aria-pressed={view === "wave"} disabled={!wl} onClick={() => setView("wave")}>
+          Moving wave
+        </button>
+      </div>
+      <div className="sheet-map" ref={el} />
+      {view === "height" && (
+        <p className="sheet-reading">{reading ?? "Tap the map to read the height there."}</p>
+      )}
+      {view === "wave" && (
+        <div className="sheet-picks" role="group" aria-label="Play">
+          <button type="button" className="sheet-play" onClick={() => setPlaying((p) => !p)}>
+            {playing ? "Pause" : "Play"}
+          </button>
+          <button type="button" aria-pressed={speed === 1} onClick={() => setSpeed(1)}>
+            Real time
+          </button>
+          <button type="button" aria-pressed={speed === 0.5} onClick={() => setSpeed(0.5)}>
+            Half speed
+          </button>
+          {!loop && <small className="sheet-loading">loading…</small>}
+        </div>
       )}
 
       <dl className="sheet-facts">
