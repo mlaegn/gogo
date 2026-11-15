@@ -82,6 +82,12 @@ def _shadow_scale(arg: str) -> tuple[str, ScoreOptions]:
     return f"{degrees:g}", ScoreOptions(shadow_deg=degrees)
 
 
+def _period_gate(arg: str) -> tuple[str, ScoreOptions]:
+    if arg not in ("peak", "peak_shifted"):
+        raise ValueError(f"period wants 'peak' or 'peak_shifted', got {arg!r}")
+    return arg, ScoreOptions(period_gate=arg)
+
+
 def _rays(arg: str) -> tuple[str, ScoreOptions]:
     """`rays` lets the traced seabed decide direction and size; `rays:size` keeps the
     hand window for direction and uses the rays for size only."""
@@ -102,6 +108,7 @@ FAMILIES: dict[str, Callable[[str], tuple[str, ScoreOptions]]] = {
     "dir_taper": _taper_width,
     "shadow": _shadow_scale,
     "rays": _rays,
+    "period": _period_gate,
 }
 
 #: The sweep `make backtest-candidates` runs. Four fixed size references — the coast's
@@ -109,7 +116,8 @@ FAMILIES: dict[str, Callable[[str], tuple[str, ScoreOptions]]] = {
 #: spot's range at the period usual for its height. Two taper widths for open spots.
 #: Three rates for the land's shadow. The traced seabed, alone and with re-anchored
 #: size, which stands in for the window, taper and shadow at once. And everything at once,
-#: since if each earns its place they would ship together. The physics fixes the
+#: since if each earns its place they would ship together. The period gate on the peak,
+#: as written and shifted down by the median gap. The physics fixes the
 #: shapes; which settings are right is what labels are for, so all go in rather than
 #: one chosen by eye.
 SUGGESTED = (
@@ -129,6 +137,8 @@ SUGGESTED = (
     "rays:size",
     "rays+size_period:typical",
     "rays:size+size_period:typical",
+    "period:peak",
+    "period:peak_shifted",
 )
 
 

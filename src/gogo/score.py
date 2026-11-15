@@ -134,6 +134,25 @@ class ScoreOptions:
     #: whose windows end at 320°, and headline "no" days fell from 19 to 3.
     rays_keep_window: bool = False
 
+    #: Which period the period gate reads. `period_min_s` reads like a surfer's number,
+    #: and the number a surf forecast quotes is the peak; the gate has always compared
+    #: it with the mean, which runs a median 3.1 s lower here (`PEAK_OVER_MEAN_S`), and
+    #: much lower when a groundswell arrives under wind sea: a 14.9 s peak over a 9.4 s
+    #: mean is "short for this spot" under the incumbent.
+    #:
+    #: - "mean": the incumbent.
+    #: - "peak": the peak, against `period_min_s` as written. Two changes at once: the
+    #:   unit (every threshold effectively 3.1 s lower) and the information in the gap.
+    #: - "peak_shifted": the peak less the median gap, so a typical hour reads as it
+    #:   does now and only an hour whose gap is unusual moves — the groundswell under
+    #:   wind sea up, a peak barely over its mean down. The information without the
+    #:   unit change.
+    #:
+    #: Only the gate moves; size, rays and shadow still read the mean. The forecast
+    #: carries a peak for about its first three days; past that "peak" reads the mean
+    #: plus the median gap and "peak_shifted" the mean, so neither jumps on day three.
+    period_gate: str = "mean"
+
     def __post_init__(self) -> None:
         if self.size_ref_period_s is not None and self.size_period_typical:
             raise ValueError("size_ref_period_s and size_period_typical are exclusive")
@@ -141,9 +160,26 @@ class ScoreOptions:
             raise ValueError("rays replaces dir_taper and shadow; use one or the other")
         if self.rays_keep_window and not self.rays:
             raise ValueError("rays_keep_window needs rays")
+        if self.period_gate not in ("mean", "peak", "peak_shifted"):
+            raise ValueError(f"period_gate is mean, peak or peak_shifted, not {self.period_gate!r}")
 
 
 INCUMBENT = ScoreOptions()
+
+#: Median peak minus mean swell period on this coast: 3.25 s over the reanalysis year
+#: (archive-era5, 61,824 hours) and 3.1 s over the live forecasts that carry a peak
+#: (open-meteo, 2026-09-09..2026-11-21, 248,582 hours); p10–p90 1.5–6.2 s. The live
+#: figure, since the gate it stands in for runs on forecasts.
+PEAK_OVER_MEAN_S = 3.1
+
+
+def gate_period_s(hour: HourForecast, options: ScoreOptions = INCUMBENT) -> float:
+    """The period the period gate compares with the spot's `period_min_s`."""
+    if options.period_gate == "mean":
+        return hour.swell_period_s
+    peak = hour.swell_peak_period_s
+    as_peak = peak if peak is not None else hour.swell_period_s + PEAK_OVER_MEAN_S
+    return as_peak if options.period_gate == "peak" else as_peak - PEAK_OVER_MEAN_S
 
 #: Median Open-Meteo *mean* swell period by swell height on this coast, at 0.25 m bin
 #: centres: ERA5 through the marine archive, 2025-09-01..2026-09-03, all seven cells,
@@ -329,13 +365,14 @@ def score_hour(
         pts = 10 + int(15 * max(0.0, min(1.0, closeness)))
         reasons.append(Reason(code="size", detail=f"{lead} in range", points=pts))
 
-    if hour.swell_period_s + 0.05 < spot.period_min_s:
-        short = spot.period_min_s - hour.swell_period_s
+    period = gate_period_s(hour, options)
+    if period + 0.05 < spot.period_min_s:
+        short = spot.period_min_s - period
         if short >= 3:
             reasons.append(
                 Reason(
                     code="period",
-                    detail=f"{hour.swell_period_s:.0f} s is too short (wants ≥ {spot.period_min_s:.0f} s)",
+                    detail=f"{period:.0f} s is too short (wants ≥ {spot.period_min_s:.0f} s)",
                     points=0,
                 )
             )
@@ -344,15 +381,15 @@ def score_hour(
             reasons.append(
                 Reason(
                     code="period",
-                    detail=f"{hour.swell_period_s:.0f} s is short for this spot",
+                    detail=f"{period:.0f} s is short for this spot",
                     points=4,
                 )
             )
-    elif hour.swell_period_s >= spot.period_min_s + 2:
+    elif period >= spot.period_min_s + 2:
         reasons.append(
             Reason(
                 code="period",
-                detail=f"{hour.swell_period_s:.0f} s has some punch",
+                detail=f"{period:.0f} s has some punch",
                 points=20,
             )
         )
@@ -360,7 +397,7 @@ def score_hour(
         reasons.append(
             Reason(
                 code="period",
-                detail=f"{hour.swell_period_s:.0f} s is enough",
+                detail=f"{period:.0f} s is enough",
                 points=12,
             )
         )

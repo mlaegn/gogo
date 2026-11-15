@@ -24,9 +24,12 @@ SOURCE = "open-meteo"
 # of live forecast before adding them:
 #
 #   swell_wave_peak_period — a median 1.5 s above the mean period the score gates on,
-#     which is the number surfers actually quote. Feeding it instead would lift a hard
-#     veto on 13.8% of hours, so the gate may be reading a different quantity from the
-#     one its thresholds were written in. S12/S13 territory, and the harness decides.
+#     which is the number surfers actually quote. (Re-measured 2026-11-15 over far more
+#     hours: a median 3.1 s on the live forecast and 3.25 s on the reanalysis year; see
+#     `score.PEAK_OVER_MEAN_S`.) Feeding it instead would lift a hard veto on 13.8% of
+#     hours, so the gate may be reading a different quantity from the one its
+#     thresholds were written in. S12/S13 territory, and the harness decides: the
+#     candidates `period:peak` and `period:peak_shifted`.
 #     Note its horizon: measured at ~69 h, where every other variable here runs the
 #     full ~145 h. A score that gated on it would veto everything past day three, so
 #     any future use needs a fallback to the mean period at long lead. Storing it

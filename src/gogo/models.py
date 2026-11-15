@@ -36,6 +36,9 @@ class Spot(BaseModel):
     swell_from_max: int
     size_min_m: float
     size_max_m: float
+    #: In mean period, which is what the gate reads, not the peak a surf forecast quotes:
+    #: the peak runs a median 3.1 s higher (`score.PEAK_OVER_MEAN_S`), so Coxos's 10 s
+    #: is about 13 s as a forecast would put it.
     period_min_s: float
     offshore_from: int
     max_onshore_kn: float

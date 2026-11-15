@@ -576,3 +576,58 @@ def test_rays_for_size_still_shrink_a_sheltered_swell_inside_the_window():
     assert shut.vetoed
     assert "below this spot's 0.6 m min" in r["size"].detail
     assert r["swell_dir"].points > 0, "direction itself is the window's call, and it passed"
+
+
+PEAK_GATE = ScoreOptions(period_gate="peak")
+PEAK_SHIFTED = ScoreOptions(period_gate="peak_shifted")
+
+
+def _period(spot_id: str, options: ScoreOptions, **kwargs):
+    scored = score_hour(by_id()[spot_id], hour(**kwargs), options)
+    return next(r for r in scored.reasons if r.code == "period")
+
+
+def test_the_peak_gate_reads_a_groundswell_under_wind_sea_as_long():
+    """Coxos on 2026-11-18: a 14.9 s peak arriving under a 9.4 s mean. The incumbent
+    calls it short for a spot that wants 10 s; on the peak it has punch."""
+    kw = dict(swell_height_m=2.5, swell_from_deg=295, swell_period_s=9.4, swell_peak_period_s=14.85)
+    assert (_period("coxos", INCUMBENT, **kw).points, _period("coxos", INCUMBENT, **kw).detail) == (
+        4,
+        "9 s is short for this spot",
+    )
+    assert (_period("coxos", PEAK_GATE, **kw).points, _period("coxos", PEAK_GATE, **kw).detail) == (
+        20,
+        "15 s has some punch",
+    )
+
+
+def test_past_the_peaks_horizon_the_gate_reads_the_mean_plus_the_median_gap():
+    """No peak past ~3 days out: 7.5 s mean stands in for 10.6 s, so the gate does not
+    swing from 'enough' to 'short' on day three."""
+    reason = _period("coxos", PEAK_GATE, swell_period_s=7.5, swell_peak_period_s=None)
+    assert (reason.points, reason.detail) == (12, "11 s is enough")
+
+
+def test_the_peak_gate_moves_only_the_period_reason():
+    kw = dict(swell_height_m=2.0, swell_from_deg=300, swell_period_s=8.0, swell_peak_period_s=12.5)
+    base = score_hour(by_id()["coxos"], hour(**kw))
+    peak = score_hour(by_id()["coxos"], hour(**kw), PEAK_GATE)
+    assert [r for r in base.reasons if r.code != "period"] == [r for r in peak.reasons if r.code != "period"]
+
+
+def test_the_shifted_peak_gate_leaves_a_typical_hour_and_moves_an_unusual_one():
+    typical = dict(swell_period_s=9.0, swell_peak_period_s=9.0 + 3.1)
+    assert _period("coxos", PEAK_SHIFTED, **typical) == _period("coxos", INCUMBENT, **typical)
+    groundswell = dict(swell_period_s=9.4, swell_peak_period_s=14.85)
+    assert _period("coxos", PEAK_SHIFTED, **groundswell).points == 12  # 11.75 s: enough
+    assert _period("coxos", INCUMBENT, **groundswell).points == 4
+
+
+def test_past_the_peaks_horizon_the_shifted_gate_is_the_incumbent():
+    kw = dict(swell_period_s=8.6, swell_peak_period_s=None)
+    assert _period("coxos", PEAK_SHIFTED, **kw) == _period("coxos", INCUMBENT, **kw)
+
+
+def test_an_unknown_period_gate_is_refused():
+    with pytest.raises(ValueError, match="period_gate"):
+        ScoreOptions(period_gate="median")

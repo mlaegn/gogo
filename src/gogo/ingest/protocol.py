@@ -37,7 +37,7 @@ class GridHour(BaseModel):
     # archive can say what the ocean did, never what we thought it would do. Each one
     # answers a question Stage 3 will ask and cannot ask without the history.
     sea_surface_temp_c: float | None = None
-    #: Peak period. Higher than `swell_period_s` (the mean) by a median 1.5 s here, and
+    #: Peak period. Higher than `swell_period_s` (the mean) by a median 3.1 s here, and
     #: it is the number a surf forecast means by "11 seconds". Only about the first
     #: three days of the horizon carry it, so None here often means "too far out"
     #: rather than "missing" — do not read an absence as a short-period sea.
