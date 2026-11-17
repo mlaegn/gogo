@@ -762,7 +762,7 @@ function SheetMap({
         </div>
       ) : view === "breaks" ? (
         <ul className="sheet-legend">
-          <li><i style={{ background: ZONE, opacity: 0.6 }} />breaks on most waves</li>
+          <li><i style={{ background: ZONE, opacity: 0.6 }} />breaking and white water, to the shore</li>
           <li><i className="dot" />takeoff at this swell</li>
           <li><i className="ring" />a peak of the reef; fainter, at fewer swells</li>
           <li><i style={{ background: BREAK }} />break points, bigger dot = bigger wave</li>
