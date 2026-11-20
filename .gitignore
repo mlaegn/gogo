@@ -23,3 +23,6 @@ web/dist/
 # typechecked without a Python environment.
 src/gogo/static/app/
 openapi.json
+
+# Claude Code worktrees: one checkout per parallel session
+.claude/worktrees/

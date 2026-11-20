@@ -213,7 +213,7 @@ src/gogo/
 └── migrations/           # numbered SQL, applied by gogo migrate
 web/                      # Vite + React + TS → src/gogo/static/app
 scripts/                  # backup, spot geometry, wave rays, tide check
-tests/                    # pytest against an isolated gogo_test database
+tests/                    # pytest against an isolated gogo_test_<hash> database, one per checkout
 ```
 
 ## Roadmap

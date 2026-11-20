@@ -1,0 +1,3 @@
+# Gitignored files copied into every new worktree (Claude Code reads this file).
+# Only the local settings. sessions.csv is location history and stays in the main checkout.
+.env

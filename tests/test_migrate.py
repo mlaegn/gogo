@@ -7,14 +7,14 @@ these files applying in order — which makes this the test that catches it.
 
 import psycopg
 import pytest
-from conftest import url_for
+from conftest import scratch_name, url_for
 from psycopg import sql
 
 from gogo.migrate import migrate, migration_files
 from gogo.settings import Settings
 from gogo.store import connect
 
-SCRATCH_DB = "gogo_migrate_scratch"
+SCRATCH_DB = scratch_name("gogo_migrate_scratch")
 
 EXPECTED_TABLES = {
     "schema_migrations",

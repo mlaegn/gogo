@@ -10,9 +10,16 @@ which `Settings` reads on every `connect()`, so no test needs to know about any 
 
 If Postgres is not running, the redirect is skipped and the database tests skip
 themselves as they always did — the pure tests still run.
+
+Every checkout gets its own scratch database. Git worktrees are separate checkouts that
+share the one local Postgres, and the fixture starts by dropping its database: under a
+fixed name, a second suite starting in another worktree would drop the first one's
+database halfway through its run.
 """
 
+import hashlib
 import os
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -23,7 +30,14 @@ from gogo.migrate import migrate
 from gogo.settings import Settings
 from gogo.store import connect
 
-SCRATCH_DB = "gogo_test"
+
+def scratch_name(base: str) -> str:
+    """`base` plus a short hash of this checkout's path, so worktrees never share one."""
+    checkout = str(Path(__file__).resolve().parent.parent)
+    return f"{base}_{hashlib.blake2s(checkout.encode(), digest_size=4).hexdigest()}"
+
+
+SCRATCH_DB = scratch_name("gogo_test")
 
 # Everything a test may write. schema_migrations is deliberately absent: truncating it
 # would make the migration ledger lie.
