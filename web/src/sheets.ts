@@ -58,6 +58,15 @@ export type Sheet = {
   seabed: { source: string | null; cell_m: number | null; attribution: string | null };
   area: [number, number][] | null; // [latitude, longitude] corners
   generated: string;
+  // Older sheets lack it. When capped, heights inside each breaking zone are held under
+  // h_over_depth times the depth (reached over_break_depths break depths in), not modelled.
+  surf_heights?: {
+    capped: boolean;
+    h_over_depth: number;
+    over_break_depths: number;
+    source: string;
+    why: string;
+  };
   peaks: { lat: number; lon: number; share: number }[];
   swells: Swell[];
 };

@@ -758,6 +758,9 @@ function SheetMap({
           <p>
             Crests pale blue, troughs dark, white water and its foam white. One wave of a perfectly regular {swell.name} swell,
             repeated: the real sea comes in sets, and this shows how each wave of it moves across the reef.
+            {sheet.surf_heights?.capped
+              ? ` Inside the break the swing is capped at about ${sheet.surf_heights.h_over_depth} times the water depth, as on the wave height map, not modelled.`
+              : ""}
           </p>
         </div>
       ) : view === "breaks" ? (
@@ -780,6 +783,9 @@ function SheetMap({
             How big the waves get, over the swell offshore. Smoothed over about 30 m, because the swell
             bouncing back off the rock lays stripes over it; so it reads a little lower than the height at the
             break, which includes that bounce.
+            {sheet.surf_heights?.capped
+              ? ` Inside the break the model keeps broken waves too tall, so there the map is capped at about ${sheet.surf_heights.h_over_depth} times the water depth (a laboratory figure), not modelled.`
+              : ""}
           </p>
         </div>
       )}
