@@ -199,8 +199,10 @@ An unset `GOGO_WEB_SECRET` means the page is off, not open.
 src/gogo/
 ├── data/coast.yml        # the spots — edit here first
 ├── data/rays.json        # traced refraction per spot (scripts/wave_rays.py)
+├── data/tides/           # official high and low waters, Cascais and Peniche (scripts/tide_table.py)
 ├── score.py              # pure, tested; SCORE_VERSION and ScoreOptions
 ├── tide.py               # low / mid / high per tide cycle
+├── almanac.py            # official tide height, rate, king/spring/neap; daylight
 ├── ingest/               # openmeteo.py forecast, archive.py reanalysis
 ├── worker.py             # fetch_once, run_forever, backfill
 ├── store.py              # Postgres
@@ -212,7 +214,7 @@ src/gogo/
 ├── importer.py / demo.py # CSV labels / fixture labels
 └── migrations/           # numbered SQL, applied by gogo migrate
 web/                      # Vite + React + TS → src/gogo/static/app
-scripts/                  # backup, spot geometry, wave rays, tide check
+scripts/                  # backup, spot geometry, wave rays, tide check, tide table
 tests/                    # pytest against an isolated gogo_test_<hash> database, one per checkout
 ```
 
@@ -222,8 +224,8 @@ tests/                    # pytest against an isolated gogo_test_<hash> database
 |---|---|
 | **~100 real labels** across several swell events | The Stage 1 gate; nothing below can be measured without them |
 | Ship or drop each candidate on its backtest number | The physics is built; labels decide it |
-| Daylight veto from sunrise/sunset | Replaces the fixed 06–20 placeholder |
-| Continuous tide (height + rate) | The three-phase proxy gives the score almost no intra-day resolution |
+| Daylight veto from sunrise/sunset | Replaces the fixed 06–20 placeholder; the almanac already computes civil dawn and dusk |
+| Continuous tide (height + rate) | The three-phase proxy gives the score almost no intra-day resolution; the almanac carries the official height, rate and king/spring/neap, unscored |
 | Evening go / no-go push | Web push, email fallback |
 | Public page: domain, accounts, invites | Invite-only is the anti-spam design |
 | Ensemble spread as shown uncertainty | Say when we don't know |
@@ -234,3 +236,7 @@ tests/                    # pytest against an isolated gogo_test_<hash> database
 Forecasts from [Open-Meteo](https://open-meteo.com/) (CC BY 4.0), using national wave and
 weather models (Météo-France, DWD, ECMWF, NCEP, and others). Free Open-Meteo is
 non-commercial; a paid plan or ads would need their customer endpoint.
+
+Tide tables from the [Instituto Hidrográfico](https://www.hidrografico.pt/) (Marinha
+Portuguesa): predicted high and low water at Cascais and Peniche, used under its terms
+for private, informational, non-commercial use.
