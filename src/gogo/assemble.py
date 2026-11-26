@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
+from gogo.almanac import tide_at
 from gogo.clock import to_local
 from gogo.ingest.protocol import GridHour
 from gogo.models import HourForecast, HourScore, Spot, WindowScore
@@ -11,7 +12,8 @@ from gogo.tide import attach_tide
 
 
 def forecasts_from_grid(hours: list[GridHour]) -> list[HourForecast]:
-    """Attach tide phase using the sea-level series of each marine grid cell."""
+    """Attach tide phase using the sea-level series of each marine grid cell, and the
+    official tide from the almanac at the spot itself."""
     by_cell: dict[tuple[float, float], list[GridHour]] = defaultdict(list)
     for h in hours:
         by_cell[(h.grid_lat, h.grid_lon)].append(h)
@@ -25,6 +27,7 @@ def forecasts_from_grid(hours: list[GridHour]) -> list[HourForecast]:
         )
         for g in group:
             phase = tides.get(g.valid_at)
+            official = tide_at(g.requested_lat, g.requested_lon, g.valid_at)
             out.append(
                 HourForecast(
                     valid_at=g.valid_at,
@@ -38,6 +41,10 @@ def forecasts_from_grid(hours: list[GridHour]) -> list[HourForecast]:
                     sea_level_m=g.sea_level_m,
                     tide=phase[0] if phase else None,
                     tide_trend=phase[1] if phase else None,
+                    tide_height_m=official.height_m if official else None,
+                    tide_rate_m_h=official.rate_m_h if official else None,
+                    tide_range_m=official.range_m if official else None,
+                    tide_class=official.tide_class if official else None,
                     swell_peak_period_s=g.swell_peak_period_s,
                     combined_height_m=g.combined_height_m,
                     combined_period_s=g.combined_period_s,
