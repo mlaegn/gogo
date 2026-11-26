@@ -228,3 +228,49 @@ def test_health_fails_before_the_tide_table_runs_out():
     short = _health(days_left=TIDE_TABLE_MIN_DAYS - 1)
     assert not short.ok
     assert "RUNNING OUT" in short.lines(spot_count=16)[-1]
+
+
+# --- a local day, and the king-tide nudge --------------------------------------------
+
+
+def test_a_local_day_holds_its_own_turning_points():
+    """Lisbon days, not UTC ones: in summer the hour after midnight belongs to the day."""
+    from gogo.almanac import day_tides
+    from gogo.clock import to_local
+
+    st = stations()["cascais"]
+    for d in (date(2027, 1, 24), date(2027, 7, 5)):
+        points = day_tides(st, d)
+        assert 3 <= len(points) <= 4
+        assert all(to_local(p.at).date() == d for p in points)
+
+
+def test_the_day_class_is_its_biggest_tide():
+    from gogo.almanac import day_class
+
+    st = stations()["cascais"]
+    assert day_class(st, date(2027, 9, 1)) == "king"
+    assert day_class(st, date(2027, 1, 17)) == "neap"
+    assert day_class(st, date(2031, 1, 1)) is None
+
+
+def test_a_king_low_in_daylight_names_the_spots_shut_at_low_tide():
+    """24 January 2027: king low 09:50 at Cascais, 10:02 at Peniche — one extreme, one
+    nudge. The spots are those whose gate leaves out low tide; Coxos works at low and
+    is not one of them."""
+    from gogo.almanac import tide_nudges
+
+    spots = load_spots()
+    nudges = tide_nudges(spots, date(2027, 1, 24))
+    assert [n.kind for n in nudges] == ["low"], "the 03:34 king high is in the dark"
+    (low,) = nudges
+    assert [st.id for st, _ in low.points] == ["cascais", "peniche"]
+    shut_at_low = {s.id for s in spots if "low" not in s.tides}
+    assert set(low.spot_ids) == shut_at_low
+    assert "coxos" not in low.spot_ids
+
+
+def test_no_nudge_on_an_ordinary_day():
+    from gogo.almanac import tide_nudges
+
+    assert tide_nudges(load_spots(), date(2026, 11, 27)) == []
