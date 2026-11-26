@@ -631,3 +631,61 @@ def test_past_the_peaks_horizon_the_shifted_gate_is_the_incumbent():
 def test_an_unknown_period_gate_is_refused():
     with pytest.raises(ValueError, match="period_gate"):
         ScoreOptions(period_gate="median")
+
+
+# --- the tide gate on the official table, and on height: candidates (S12) ----------
+
+
+def _tide_reason(spot_id: str, options: ScoreOptions, **kwargs):
+    spot = by_id()[spot_id]
+    return next(r for r in score_hour(spot, hour(**kwargs), options).reasons if r.code == "tide")
+
+
+def test_the_official_phase_replaces_open_meteo_s_when_asked():
+    """Open-Meteo says low, the official curve is halfway up the flood: Ribeira, which
+    leaves out low, passes on the official reading only."""
+    official = ScoreOptions(tide_official=True)
+    kwargs = dict(tide="low", tide_trend="incoming", tide_fraction=0.5, tide_rate_m_h=0.8)
+    assert _tide_reason("ribeira", INCUMBENT, **kwargs).points == 2
+    reason = _tide_reason("ribeira", official, **kwargs)
+    assert (reason.points, reason.detail) == (15, "mid incoming works here")
+
+
+def test_the_official_phase_falls_back_past_the_end_of_the_table():
+    official = ScoreOptions(tide_official=True)
+    assert _tide_reason("ribeira", official, tide="low").points == 2
+
+
+@pytest.mark.parametrize(
+    ("spot_id", "height", "points"),
+    [
+        ("ribeira", -1.7, 2),  # king low, and Ribeira leaves out low
+        ("ribeira", -0.2, 15),
+        ("ribeira", +1.8, 15),  # takes high
+        ("coxos", +0.6, 2),  # leaves out high
+        ("coxos", -1.7, 15),
+        ("supertubos", -0.5, 2),  # mid only: both edges
+        ("supertubos", +0.5, 2),
+        ("supertubos", 0.0, 15),
+        ("foz_lizandro", -1.7, 15),  # takes all three: no tide gate
+    ],
+)
+def test_the_height_band_is_drawn_from_each_spot_s_tides(spot_id, height, points):
+    band = ScoreOptions(tide_band_m=0.35)
+    reason = _tide_reason(spot_id, band, tide_height_m=height, tide_rate_m_h=0.0)
+    assert reason.points == points
+
+
+def test_a_neap_low_passes_on_height_where_the_phase_shut_it():
+    """The point of the band: a neap low 0.3 m under mean sea level is "low" by phase
+    and shuts Ribeira, but there is water over the bank."""
+    kwargs = dict(tide="low", tide_height_m=-0.3, tide_rate_m_h=0.1)
+    assert _tide_reason("ribeira", INCUMBENT, **kwargs).points == 2
+    assert _tide_reason("ribeira", ScoreOptions(tide_band_m=0.35), **kwargs).points == 15
+
+
+def test_the_height_band_and_the_official_phase_are_exclusive():
+    with pytest.raises(ValueError, match="replaces the phase gate"):
+        ScoreOptions(tide_official=True, tide_band_m=0.35)
+    with pytest.raises(ValueError, match="positive"):
+        ScoreOptions(tide_band_m=0.0)

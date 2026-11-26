@@ -165,6 +165,11 @@ difference with an interval, plus how many stored days it would change the headl
 | `dir_taper:45` | Open beaches take swell past the window edge, height cut by refraction | 13% |
 | `shadow:20` | Headlands diffract swell into their lee (OSM coastline) | 32% |
 | `rays:size` | Reverse ray tracing over EMODnet bathymetry gives size per direction × period | 37% |
+| `tide:official` | The tide phase read off the official table, not Open-Meteo: the control for the next one | 0.5%¹ |
+| `tide_height:0.35` | The tide gate on depth, not phase: shut longer around spring lows, open longer around neap ones | 2.2%¹ |
+
+¹ Over a year of reanalysis (Sep 2025 – Aug 2026) rather than the stored forecast days.
+`tide_height` also runs at 0.25 m (1.9%) and 0.5 m (4.7%).
 
 The tracer reproduces Snell's law, the Nazaré canyon's focusing and 16 local facts
 (`tests/test_rays_knowledge.py`). Out of scope: anything that needs the seabed at the
@@ -224,7 +229,7 @@ tests/                    # pytest against an isolated gogo_test_<hash> database
 |---|---|
 | **~100 real labels** across several swell events | The Stage 1 gate; nothing below can be measured without them |
 | Ship or drop each candidate on its backtest number | The physics is built; labels decide it |
-| Continuous tide (height + rate) | The three-phase proxy gives the score almost no intra-day resolution; the almanac carries the official height, rate and king/spring/neap, unscored |
+| Ship or drop `tide_height` | The tide gate on depth is built as a candidate; king-tide days, which the page now nudges you to log, are where labels settle it |
 | Evening go / no-go push | Web push, email fallback |
 | Public page: domain, accounts, invites | Invite-only is the anti-spam design |
 | Ensemble spread as shown uncertainty | Say when we don't know |

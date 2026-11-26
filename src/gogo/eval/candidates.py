@@ -98,6 +98,25 @@ def _rays(arg: str) -> tuple[str, ScoreOptions]:
     raise ValueError(f"rays takes nothing or 'size', got {arg!r}")
 
 
+def _tide(arg: str) -> tuple[str, ScoreOptions]:
+    """`tide:official` reads the phase gate off the official tide table."""
+    if arg != "official":
+        raise ValueError(f"tide takes 'official', got {arg!r}")
+    return arg, ScoreOptions(tide_official=True)
+
+
+def _tide_height(arg: str) -> tuple[str, ScoreOptions]:
+    try:
+        metres = float(arg)
+    except ValueError:
+        raise ValueError(f"tide_height wants metres, got {arg!r}") from None
+    # A median half-range is 1.0 m here: a band past that shuts nothing, under 0.1 m
+    # shuts everything but slack.
+    if not 0.1 <= metres <= 1.0:
+        raise ValueError(f"tide_height band {metres:g} m is outside 0.1–1.0 m")
+    return f"{metres:g}", ScoreOptions(tide_band_m=metres)
+
+
 #: Families that are complete without an argument.
 BARE = frozenset({"rays"})
 
@@ -109,6 +128,8 @@ FAMILIES: dict[str, Callable[[str], tuple[str, ScoreOptions]]] = {
     "shadow": _shadow_scale,
     "rays": _rays,
     "period": _period_gate,
+    "tide": _tide,
+    "tide_height": _tide_height,
 }
 
 #: The sweep `make backtest-candidates` runs. Four fixed size references — the coast's
@@ -117,9 +138,10 @@ FAMILIES: dict[str, Callable[[str], tuple[str, ScoreOptions]]] = {
 #: Three rates for the land's shadow. The traced seabed, alone and with re-anchored
 #: size, which stands in for the window, taper and shadow at once. And everything at once,
 #: since if each earns its place they would ship together. The period gate on the peak,
-#: as written and shifted down by the median gap. The physics fixes the
-#: shapes; which settings are right is what labels are for, so all go in rather than
-#: one chosen by eye.
+#: as written and shifted down by the median gap. The tide gate read off the official
+#: table, and on height at three band widths around the median tide's ±0.35 m. The
+#: physics fixes the shapes; which settings are right is what labels are for, so all go
+#: in rather than one chosen by eye.
 SUGGESTED = (
     "size_period:6.5",
     "size_period:8.3",
@@ -139,6 +161,10 @@ SUGGESTED = (
     "rays:size+size_period:typical",
     "period:peak",
     "period:peak_shifted",
+    "tide:official",
+    "tide_height:0.25",
+    "tide_height:0.35",
+    "tide_height:0.5",
 )
 
 

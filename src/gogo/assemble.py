@@ -47,6 +47,7 @@ def forecasts_from_grid(hours: list[GridHour]) -> list[HourForecast]:
                     tide_rate_m_h=official.rate_m_h if official else None,
                     tide_range_m=official.range_m if official else None,
                     tide_class=official.tide_class if official else None,
+                    tide_fraction=official.fraction if official else None,
                     swell_peak_period_s=g.swell_peak_period_s,
                     combined_height_m=g.combined_height_m,
                     combined_period_s=g.combined_period_s,

@@ -81,6 +81,9 @@ class TideHour:
     #: Low to high of the half-cycle this instant sits in.
     range_m: float
     tide_class: TideClass
+    #: Where in that half-cycle: 0 at its low water, 1 at its high water. The official
+    #: counterpart of the low / mid / high that `tide.attach_tide` reads off Open-Meteo.
+    fraction: float
 
 
 @dataclass(frozen=True)
@@ -156,11 +159,14 @@ class Station:
         height = p0.height_m + rise * (1 - math.cos(math.pi * phase)) / 2
         rate = rise * math.pi / 2 * math.sin(math.pi * phase) / span_h
         tide_class: TideClass = "king" if p0.king or p1.king else self._range_class[i]
+        low, high = sorted((p0.height_m, p1.height_m))
+        fraction = (height - low) / (high - low) if high > low else 0.5
         return TideHour(
             height_m=round(height, 3),
             rate_m_h=round(rate, 3),
             range_m=round(abs(rise), 2),
             tide_class=tide_class,
+            fraction=round(fraction, 3),
         )
 
     def between(self, start: datetime, end: datetime) -> list[TurningPoint]:
