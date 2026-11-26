@@ -740,3 +740,67 @@ button:disabled { opacity: 0.55; }
 @media (prefers-reduced-motion: reduce) {
   .refreshing { transition: none; }
 }
+
+/* --- the almanac: tide table and light on a spot, the king-tide nudge ------------ */
+
+.almanac { margin: 0.9rem 0 0.2rem; }
+.tides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tide {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+.tide-kind {
+  color: var(--dim);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.tide b { font-weight: 600; }
+.tide.king b,
+.tide.king small { color: var(--gold); }
+.almanac-note {
+  margin: 0.4rem 0 0;
+  color: var(--dim);
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.tide-class.tc-king { color: var(--gold); }
+
+.nudge {
+  margin: 1.1rem 0 0.2rem;
+  padding: 0.85rem 1rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--gold) 6%, var(--card));
+}
+.nudge .kicker { margin: 0 0 0.3rem; }
+.nudge-text { margin: 0; font-size: 0.88rem; line-height: 1.45; }
+.nudge-spots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+}
+.nudge-spots a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.82rem;
+}

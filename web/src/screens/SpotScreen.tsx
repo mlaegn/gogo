@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
+import { SpotAlmanacLine } from "../Almanac";
 import { DayStrip } from "../DayStrip";
 import { api } from "../api/client";
 import { hasSheet } from "../sheets";
@@ -30,7 +31,7 @@ export function SpotScreen() {
     );
   }
 
-  const { spot, day: shown, hours } = result.data;
+  const { spot, day: shown, hours, almanac } = result.data;
   const today = todayInLisbon();
   const listTo = shown === today ? "/" : `/?day=${shown}`;
   const passing = hours.filter((h) => h.verdict !== "no");
@@ -76,8 +77,11 @@ export function SpotScreen() {
         peakLocal={peak ? `${shown}T${peak.at_local}:00` : undefined}
         nowLocal={nowLocal}
         verdict={stripVerdict}
+        daylight={almanac?.daylight}
         size="hero"
       />
+
+      {almanac && <SpotAlmanacLine almanac={almanac} />}
 
       <ol className="hours">
         {hours.map((h) => {

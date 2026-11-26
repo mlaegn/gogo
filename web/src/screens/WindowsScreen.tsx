@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from "react-router-dom";
 
+import { TideNudgeCard } from "../Almanac";
 import { DayStrip } from "../DayStrip";
 import { api } from "../api/client";
 import {
@@ -42,7 +43,7 @@ export function WindowsScreen() {
     );
   }
 
-  const { day: shown, days, windows, as_of } = result.data;
+  const { day: shown, days, windows, as_of, daylight, nudges } = result.data;
   const today = todayInLisbon();
   const nowLocal = shown === today ? lisbonNowLocal(shown) : undefined;
   const best = windows.find((w) => w.verdict !== "no");
@@ -78,6 +79,7 @@ export function WindowsScreen() {
               peakLocal={best.peak_at_local}
               nowLocal={nowLocal}
               verdict={best.verdict}
+              daylight={daylight}
               size="hero"
             />
             <div className="meta">
@@ -108,6 +110,7 @@ export function WindowsScreen() {
             endsLocal={`${shown}T06:00:00`}
             nowLocal={nowLocal}
             verdict="no"
+            daylight={daylight}
             size="hero"
           />
           <p className="why">
@@ -116,6 +119,10 @@ export function WindowsScreen() {
           </p>
         </div>
       )}
+
+      {nudges.map((n) => (
+        <TideNudgeCard key={`${n.kind}-${n.tides[0]?.at}`} nudge={n} day={shown} />
+      ))}
 
       <ol className="ranked">
         {rest.map((w) => (
@@ -133,6 +140,7 @@ export function WindowsScreen() {
                   peakLocal={w.peak_at_local}
                   nowLocal={nowLocal}
                   verdict={w.verdict}
+                  daylight={daylight}
                   size="row"
                 />
               </span>

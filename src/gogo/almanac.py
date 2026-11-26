@@ -320,3 +320,84 @@ def sun_times(day: date, lat: float, lon: float) -> SunTimes:
         sunset=_crossing(day, lat, lon, _SUNRISE_ALT, rising=False),
         civil_dusk=_crossing(day, lat, lon, _CIVIL_ALT, rising=False),
     )
+
+
+# --- a local day, as the page shows it ---------------------------------------------
+
+_CLASS_RANK: dict[TideClass, int] = {"neap": 0, "normal": 1, "spring": 2, "king": 3}
+
+
+def _local_day_bounds(day: date) -> tuple[datetime, datetime]:
+    from gogo.clock import from_local_input
+
+    return from_local_input(day, "00:00"), from_local_input(day + timedelta(days=1), "00:00")
+
+
+def day_tides(station: Station, day: date) -> list[TurningPoint]:
+    """High and low waters on a local (Lisbon) day."""
+    return station.between(*_local_day_bounds(day))
+
+
+def day_class(station: Station, day: date) -> TideClass | None:
+    """The biggest tide of a local day: king if any high or low that day is king, else
+    the largest class among the half-cycles that start that day. None outside the
+    table."""
+    start, end = _local_day_bounds(day)
+    classes = [
+        "king" if (p.king or q.king) else station._range_class[i]
+        for i, (p, q) in enumerate(zip(station.points, station.points[1:], strict=False))
+        if start <= p.at < end
+    ]
+    return max(classes, key=lambda c: _CLASS_RANK[c]) if classes else None
+
+
+@dataclass(frozen=True)
+class TideNudge:
+    """A king tide in daylight, and the spots where it tests the tide gate hardest.
+
+    A spot whose `tides` leave out this phase is one the score shuts at this tide. A
+    king low or high is the most extreme version of that call, so a checked session
+    there — surfed or looked at and left — is the label that says whether the gate is
+    right. Several spots are named on purpose: the headline metric is built from
+    same-day pairs, and one lone label is not a pair.
+
+    The same turning point reaches Cascais and Peniche about ten minutes apart, so the
+    two stations' extremes are one nudge, with a time from each.
+    """
+
+    kind: TideKind
+    #: The king turning point at each station involved, earliest first.
+    points: tuple[tuple[Station, TurningPoint], ...]
+    spot_ids: tuple[str, ...]
+
+
+def tide_nudges(spots: list, day: date) -> list[TideNudge]:
+    """King turning points on a local day that fall in daylight at a spot whose tide gate
+    excludes that phase, one nudge per extreme. `spots` are `gogo.models.Spot`."""
+    hits: list[tuple[Station, TurningPoint, str]] = []
+    for spot in spots:
+        station = station_for(spot.lat, spot.lon)
+        sun = sun_times(day, spot.lat, spot.lon)
+        for p in day_tides(station, day):
+            if p.king and p.kind not in spot.tides and sun.civil_dawn <= p.at <= sun.civil_dusk:
+                hits.append((station, p, spot.id))
+
+    nudges: list[TideNudge] = []
+    for station, p, spot_id in sorted(hits, key=lambda h: h[1].at):
+        same = next(
+            (
+                n
+                for n in nudges
+                if n.kind == p.kind and abs(n.points[0][1].at - p.at) < timedelta(hours=1)
+            ),
+            None,
+        )
+        if same is None:
+            nudges.append(TideNudge(kind=p.kind, points=((station, p),), spot_ids=(spot_id,)))
+            continue
+        points = same.points
+        if all(st.id != station.id for st, _ in points):
+            points = (*points, (station, p))
+        spot_ids = same.spot_ids if spot_id in same.spot_ids else (*same.spot_ids, spot_id)
+        nudges[nudges.index(same)] = TideNudge(kind=same.kind, points=points, spot_ids=spot_ids)
+    return nudges
