@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import functools
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
-from gogo.almanac import tide_at
+from gogo.almanac import sun_times, tide_at
 from gogo.clock import to_local
 from gogo.ingest.protocol import GridHour
 from gogo.models import HourForecast, HourScore, Spot, WindowScore
 from gogo.score import INCUMBENT, ScoreOptions, score_hour, verdict_for
+from gogo.spots import load_spots
 from gogo.tide import attach_tide
 
 
@@ -56,12 +58,30 @@ def forecasts_from_grid(hours: list[GridHour]) -> list[HourForecast]:
     return out
 
 
-# Hours a person might plausibly surf, in local time. A placeholder for real daylight:
-# without any bound the run finder happily reports 03:00–05:00 as the day's best window,
-# because nothing in the score knows the sun is down. S12 replaces this with sunrise and
-# sunset, at which point these constants go away.
-SURFABLE_FROM_HOUR = 6
-SURFABLE_UNTIL_HOUR = 20
+_HALF_HOUR = timedelta(minutes=30)
+
+
+@functools.cache
+def daylight(day: date, lat: float, lon: float) -> tuple[datetime, datetime]:
+    """Civil dawn and dusk on a local day, UTC: the sun 6° below the horizon, light
+    enough to see the water and paddle out. See `gogo.almanac.sun_times`."""
+    sun = sun_times(day, lat, lon)
+    return sun.civil_dawn, sun.civil_dusk
+
+
+def first_surfable_hour(day: date, lat: float, lon: float) -> datetime:
+    """The first hour of `day` that `_is_surfable` admits at a place, as a UTC instant."""
+    dawn, _ = daylight(day, lat, lon)
+    start = (dawn - _HALF_HOUR).replace(minute=0, second=0, microsecond=0)
+    return start if start + _HALF_HOUR >= dawn else start + timedelta(hours=1)
+
+
+@functools.cache
+def first_light_on_coast(day: date) -> datetime:
+    """The earliest first surfable hour of any spot. Civil dawn differs by at most 3
+    minutes from Caparica to Lagide, but that can still put two spots' first hours on
+    either side of an hour, so this takes the earliest rather than one spot's."""
+    return min(first_surfable_hour(day, s.lat, s.lon) for s in load_spots())
 
 
 def plan_day(hours: list[GridHour], not_before: datetime | None = None) -> date | None:
@@ -87,19 +107,36 @@ def plan_day(hours: list[GridHour], not_before: datetime | None = None) -> date 
     return saturdays[0] if saturdays else local[0].date()
 
 
-def _is_surfable(valid_at: datetime, day: date, not_before: datetime | None) -> bool:
+def _is_surfable(
+    valid_at: datetime, day: date, not_before: datetime | None, lat: float, lon: float
+) -> bool:
+    """An hour someone could be in the water: on the day, not past, and at least half
+    of it between civil dawn and dusk at that spot.
+
+    Without a bound the run finder reports 03:00–05:00 as the day's best window,
+    because nothing in the score knows the sun is down. Until v5 the bound was a fixed
+    06:00–20:00 local. In December that offered 06:00 and 18:00–20:00, all of them in
+    the dark; in June it stopped at 20:00 with an hour and a half of light left.
+
+    The half-hour test reads the hour as the span it is served as, `valid_at` to an
+    hour later: on 21 December civil dawn is 07:22, so 07:00–08:00 is in (38 of its 60
+    minutes are light) and 06:00 is not.
+    """
     if not_before is not None and valid_at < not_before:
         return False
-    local = to_local(valid_at)
-    return local.date() == day and SURFABLE_FROM_HOUR <= local.hour < SURFABLE_UNTIL_HOUR
+    if to_local(valid_at).date() != day:
+        return False
+    dawn, dusk = daylight(day, lat, lon)
+    middle = valid_at + _HALF_HOUR
+    return dawn <= middle <= dusk
 
 
 def _surfable_on(
-    series: list[HourForecast], day: date, not_before: datetime | None = None
+    series: list[HourForecast], spot: Spot, day: date, not_before: datetime | None = None
 ) -> list[HourForecast]:
-    """The day's hours a person could actually be in the water, in order."""
+    """The day's hours a person could actually be in the water at `spot`, in order."""
     return sorted(
-        (h for h in series if _is_surfable(h.valid_at, day, not_before)),
+        (h for h in series if _is_surfable(h.valid_at, day, not_before, spot.lat, spot.lon)),
         key=lambda h: h.valid_at,
     )
 
@@ -112,11 +149,11 @@ def available_days(
     The first entry is the right default for a page: today while there is still a
     morning or an afternoon left in it, tomorrow once there is not.
     """
-    days = {
-        to_local(h.valid_at).date()
-        for h in hours
-        if _is_surfable(h.valid_at, to_local(h.valid_at).date(), not_before)
-    }
+    days = set()
+    for h in hours:
+        day = to_local(h.valid_at).date()
+        if _is_surfable(h.valid_at, day, not_before, h.requested_lat, h.requested_lon):
+            days.add(day)
     return sorted(days)
 
 
@@ -197,7 +234,8 @@ def spot_day(
     series = forecasts_from_grid(
         [h for h in hours if (h.requested_lat, h.requested_lon) == (spot.lat, spot.lon)]
     )
-    return [(h, score_hour(spot, h, options)) for h in _surfable_on(series, day, not_before)]
+    surfable = _surfable_on(series, spot, day, not_before)
+    return [(h, score_hour(spot, h, options)) for h in surfable]
 
 
 def scored_hours(
@@ -240,7 +278,7 @@ def windows_for_day(
     ranked: list[WindowScore] = []
     for spot in spots:
         series = forecasts_from_grid(by_request.get((spot.lat, spot.lon), []))
-        surfable = _surfable_on(series, day, not_before)
+        surfable = _surfable_on(series, spot, day, not_before)
         if not surfable:
             continue
         scored = [score_hour(spot, hour, options) for hour in surfable]

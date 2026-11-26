@@ -176,8 +176,14 @@ def test_evening_before_is_six_in_the_evening_local_the_day_before():
 
 
 def test_lead_24h_gives_every_surfable_hour_at_least_a_day_of_warning():
-    first_surfable = from_local_input(DAY, "06:00")
-    assert first_surfable - as_of_for(LEAD_24H, DAY) == timedelta(hours=24)
+    """Since v5 the first surfable hour follows civil dawn, so the bound does too: on
+    5 September dawn is 06:44 local and the first hour 07:00."""
+    from gogo.assemble import first_surfable_hour
+
+    as_of = as_of_for(LEAD_24H, DAY)
+    assert as_of == from_local_input(DAY - timedelta(days=1), "07:00")
+    for spot in load_spots():
+        assert first_surfable_hour(DAY, spot.lat, spot.lon) - as_of >= timedelta(hours=24)
 
 
 def test_best_known_is_unbounded():
@@ -270,7 +276,7 @@ def test_a_day_we_hold_nothing_for_is_empty_rather_than_an_error():
 
 def test_a_backtest_reads_the_same_tide_phase_the_page_was_shown():
     """v3. The tide phase is read from the cycle around each hour, and features_for_day
-    pads its day so the 06:00 and 20:00 edges have that cycle under them. Classified
+    pads its day so the first and last light hours have that cycle under them. Classified
     from the padded day it must match a week-long series, which is what serving loads.
     Under v2 the day was classified against its own min and max and 12% of a year's
     hours came out a different phase from the page."""

@@ -34,7 +34,7 @@ number.
 | Piece | What it does |
 |---|---|
 | **Spots** | 16 spots in `src/gogo/data/coast.yml`: swell window, size range, wind, tide |
-| **Score** | Deterministic, per hour; adjacent passing hours become a window, ranked by mean then length (`v4`) |
+| **Score** | Deterministic, per hour; adjacent passing hours become a window, ranked by mean then length, searched between civil dawn and dusk (`v5`) |
 | **Worker** | Fetches Open-Meteo marine + wind hourly into Postgres; keeps every changed forecast |
 | **Page** | Phone UI (React + TS): ranked windows for any day this week, plus the blind log card |
 | **Labels** | `observations` from the page, `gogo log`, or a CSV of remembered sessions |
@@ -78,7 +78,7 @@ for real same-day pairs.
 | 0 · Foundations | UTC discipline, versioned score + spot specs, observations, impressions, migrations | done |
 | 1 · Labels | windows as ranges, any day, phone page, worker, VPS, import | built; **~100 labels: not yet** |
 | 2 · Harness | as-of features, event-grouped dataset, 5 metrics × 5 baselines, `gogo backtest` | done |
-| 3 · Better score | v3 wind/tide fixes, v4 tide timing; size / taper / shadow / rays candidates | candidates waiting for labels |
+| 3 · Better score | v3 wind/tide fixes, v4 tide timing, v5 daylight; size / taper / shadow / rays candidates | candidates waiting for labels |
 | 4 · Groups | invite-only accounts, spec overlays over a global label pool | later |
 
 ## Quick Start
@@ -224,7 +224,6 @@ tests/                    # pytest against an isolated gogo_test_<hash> database
 |---|---|
 | **~100 real labels** across several swell events | The Stage 1 gate; nothing below can be measured without them |
 | Ship or drop each candidate on its backtest number | The physics is built; labels decide it |
-| Daylight veto from sunrise/sunset | Replaces the fixed 06–20 placeholder; the almanac already computes civil dawn and dusk |
 | Continuous tide (height + rate) | The three-phase proxy gives the score almost no intra-day resolution; the almanac carries the official height, rate and king/spring/neap, unscored |
 | Evening go / no-go push | Web push, email fallback |
 | Public page: domain, accounts, invites | Invite-only is the anti-spam design |

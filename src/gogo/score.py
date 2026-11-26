@@ -23,7 +23,15 @@ from gogo.rays import factor, load_tables
 # v4 — Open-Meteo's sea level turns 32 minutes before the official tide (Instituto
 # Hidrográfico, Cascais and Peniche, 120 turning points, spread 3–4 min). The tide phase
 # now reads each hour 32 minutes back; a quarter of surfable hours had the wrong phase.
-SCORE_VERSION = "v4"
+#
+# v5 — daylight, not a clock. The hours searched for a window were a fixed 06:00–20:00
+# local; now an hour counts when at least half of it lies between civil dawn and dusk
+# at the spot (`assemble._is_surfable`, from `gogo.almanac`). Over a year of reanalysis
+# (1 Sep 2025 – 31 Aug 2026, `scripts/daylight_check.py`) the fixed bound offered 7772
+# spot-hours in the dark and missed 3263 light ones. The best window's bounds move on
+# 89% of (day, spot) pairs, 60% of those by an hour or less at an end; the top spot
+# changes on 11% of days. A fix like v3 and v4, not a retune: no weight moved.
+SCORE_VERSION = "v5"
 
 # Onshore is ~180° from the spot's offshore_from.
 _ONSHORE_ALIGN_DEG = 75

@@ -10,7 +10,8 @@ from datetime import date, timedelta
 from helpers import grid_day
 
 from gogo.assemble import (
-    SURFABLE_FROM_HOUR,
+    daylight,
+    first_surfable_hour,
     plan_day,
     runs_of_passing_hours,
     window_from_run,
@@ -114,7 +115,7 @@ def test_a_real_day_produces_one_ranked_range_per_spot():
 
 
 def test_hours_in_the_dark_are_not_offered():
-    """Nothing in the score knows the sun is down, so the search window bounds it.
+    """Nothing in the score knows the sun is down, so daylight bounds the search.
 
     Without this, a glassy 03:00 would be ranked as the day's best call.
     """
@@ -124,7 +125,39 @@ def test_hours_in_the_dark_are_not_offered():
     straddling = grid_day(DAY, RIBEIRA, 4, 9)
     ranked = windows_for_day(RIBEIRA, straddling, DAY)
     assert len(ranked) == 1
-    assert to_local(ranked[0].starts_at).hour >= SURFABLE_FROM_HOUR
+    ribeira = RIBEIRA[0]
+    assert ranked[0].starts_at == first_surfable_hour(DAY, ribeira.lat, ribeira.lon)
+    dawn, _ = daylight(DAY, ribeira.lat, ribeira.lon)
+    assert ranked[0].starts_at + timedelta(minutes=30) >= dawn
+
+
+def test_a_december_evening_ends_at_dusk_not_at_eight():
+    """v5. Civil dusk on 19 December is 17:48 local; the fixed 06–20 bound offered
+    18:00 and 19:00, both in the dark."""
+    day = date(2026, 12, 19)  # a Saturday
+    ranked = windows_for_day(RIBEIRA, grid_day(day, RIBEIRA, 15, 20), day)
+    assert len(ranked) == 1
+    assert to_local(ranked[0].ends_at).hour == 18, "17:00–18:00 is the last light hour"
+
+
+def test_a_june_evening_runs_past_eight():
+    """v5. Civil dusk on 19 June is 21:38 local; the fixed bound stopped at 20:00.
+    21:00–22:00 has 38 light minutes, so it is the last hour in."""
+    day = date(2027, 6, 19)  # a Saturday
+    ranked = windows_for_day(RIBEIRA, grid_day(day, RIBEIRA, 17, 23), day)
+    assert len(ranked) == 1
+    assert to_local(ranked[0].ends_at).hour == 22
+
+
+def test_an_hour_counts_when_at_least_half_of_it_is_light():
+    """21 December: civil dawn 07:22. 07:00–08:00 has 38 light minutes and is in;
+    06:00–07:00 has none and is out."""
+    day = date(2026, 12, 21)
+    ribeira = RIBEIRA[0]
+    first = first_surfable_hour(day, ribeira.lat, ribeira.lon)
+    assert to_local(first).hour == 7
+    ranked = windows_for_day(RIBEIRA, grid_day(day, RIBEIRA, 5, 10), day)
+    assert to_local(ranked[0].starts_at).hour == 7
 
 
 def test_a_closed_spot_reports_the_span_it_searched_and_why():

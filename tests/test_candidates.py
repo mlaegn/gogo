@@ -180,7 +180,8 @@ def test_movement_counts_nothing_when_nothing_changes():
     assert m.days == 1
     assert m.headline_changed == 0
     assert sum(m.opened.values()) == sum(m.closed.values()) == 0
-    assert m.hours["ribeira"] == 14, "06:00–20:00 local, every surfable hour counted"
+    # Stored 06:00–20:00 local; since v5 civil dawn (06:44 on 5 September) drops 06:00.
+    assert m.hours["ribeira"] == 13, "07:00–20:00 local, every surfable hour counted"
 
 
 def test_re_anchored_movement_is_nothing_on_a_typical_day():
@@ -205,7 +206,7 @@ def test_movement_sees_a_candidate_close_a_spot():
         moved = cand.movement(conn, spots, cand.options_for(["size_period:8.3"]))
 
     m = moved["size_period:8.3"]
-    assert m.closed["ribeira"] == 14 and m.opened["ribeira"] == 0
+    assert m.closed["ribeira"] == 13 and m.opened["ribeira"] == 0  # 07:00–20:00, v5
     assert m.headline_changed == 1
     assert m.disagreements == [(DAY, "ribeira", None)]
     assert m.incumbent_verdicts["no"] == 0 and m.candidate_verdicts["no"] == 1
@@ -220,7 +221,7 @@ def test_movement_sees_the_taper_open_a_spot_just_outside_its_window():
         _hours(conn, spots, swell_from_deg=340.0)
         moved = cand.movement(conn, spots, cand.options_for(["dir_taper:45"]))
     m = moved["dir_taper:45"]
-    assert m.opened["sao_sebastiao"] == 14 and m.closed["sao_sebastiao"] == 0
+    assert m.opened["sao_sebastiao"] == 13 and m.closed["sao_sebastiao"] == 0  # v5
     assert m.disagreements == [(DAY, None, "sao_sebastiao")]
 
 
