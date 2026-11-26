@@ -166,6 +166,43 @@ export interface components {
             /** Key */
             key: string;
         };
+        /**
+         * DaylightOut
+         * @description A day's light. Civil dawn and dusk (sun 6° below the horizon) bound the hours a
+         *     window is searched in (score v5); sunrise and sunset are for reading.
+         */
+        DaylightOut: {
+            /**
+             * Civil Dawn
+             * Format: date-time
+             */
+            civil_dawn: string;
+            /**
+             * Civil Dawn Local
+             * Format: date-time
+             */
+            civil_dawn_local: string;
+            /**
+             * Sunrise Local
+             * Format: date-time
+             */
+            sunrise_local: string;
+            /**
+             * Sunset Local
+             * Format: date-time
+             */
+            sunset_local: string;
+            /**
+             * Civil Dusk
+             * Format: date-time
+             */
+            civil_dusk: string;
+            /**
+             * Civil Dusk Local
+             * Format: date-time
+             */
+            civil_dusk_local: string;
+        };
         /** DaysOut */
         DaysOut: {
             /** Timezone */
@@ -289,6 +326,20 @@ export interface components {
             /** Spec Version */
             spec_version: string;
         };
+        /**
+         * SpotAlmanacOut
+         * @description What is known in advance at one spot on one day: its station's tide table and
+         *     the spot's own daylight.
+         */
+        SpotAlmanacOut: {
+            /** Station */
+            station: string;
+            daylight: components["schemas"]["DaylightOut"];
+            /** Tides */
+            tides: components["schemas"]["TideOut"][];
+            /** Tide Class */
+            tide_class?: ("neap" | "normal" | "spring" | "king") | null;
+        };
         /** SpotDayOut */
         SpotDayOut: {
             spot: components["schemas"]["SpotDetailOut"];
@@ -299,6 +350,7 @@ export interface components {
             day: string;
             /** Hours */
             hours: components["schemas"]["HourOut"][];
+            almanac?: components["schemas"]["SpotAlmanacOut"] | null;
         };
         /** SpotDetailOut */
         SpotDetailOut: {
@@ -363,6 +415,50 @@ export interface components {
             peak_period_s?: number | null;
             /** From Deg */
             from_deg: number;
+        };
+        /**
+         * TideNudgeOut
+         * @description A king tide in daylight, and the spots whose tide gate it tests hardest. The
+         *     page asks for a checked session at several of them, because the headline metric
+         *     is built from same-day pairs.
+         */
+        TideNudgeOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "high" | "low";
+            /** Tides */
+            tides: components["schemas"]["TideOut"][];
+            /** Stations */
+            stations: string[];
+            /** Spots */
+            spots: components["schemas"]["SpotOut"][];
+        };
+        /**
+         * TideOut
+         * @description One high or low water from the official tide table.
+         */
+        TideOut: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * At Local
+             * Format: date-time
+             */
+            at_local: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "high" | "low";
+            /** Height M */
+            height_m: number;
+            /** King */
+            king: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -453,6 +549,12 @@ export interface components {
             as_of?: string | null;
             /** Windows */
             windows: components["schemas"]["WindowOut"][];
+            daylight?: components["schemas"]["DaylightOut"] | null;
+            /**
+             * Nudges
+             * @default []
+             */
+            nudges: components["schemas"]["TideNudgeOut"][];
         };
     };
     responses: never;

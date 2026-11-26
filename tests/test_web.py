@@ -269,6 +269,21 @@ def test_a_spot_detail_records_no_impression(client):
     assert impressions() > before
 
 
+def test_the_day_carries_its_light_and_each_spot_its_tide_table(client, forecast):
+    """The almanac reaches the page: the coast's daylight and any king-tide nudges on
+    the windows, the station's high and low waters and the spot's light on a detail."""
+    body = client.get("/api/windows").json()
+    light = body["daylight"]
+    assert light["civil_dawn_local"] < light["sunrise_local"] < light["sunset_local"]
+    assert isinstance(body["nudges"], list)
+
+    spot = load_spots()[0]
+    almanac = client.get(f"/api/spots/{spot.id}").json()["almanac"]
+    assert almanac["station"] == "Cascais"
+    assert 3 <= len(almanac["tides"]) <= 4
+    assert {t["kind"] for t in almanac["tides"]} == {"high", "low"}
+
+
 def test_the_day_list_records_no_impression(client):
     """/api/days answers "which days do you hold", not "here is where to go".
 

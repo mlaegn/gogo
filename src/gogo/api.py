@@ -7,18 +7,31 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from gogo import __version__
+from gogo.almanac import (
+    SunTimes,
+    TurningPoint,
+    day_class,
+    day_tides,
+    station_for,
+    sun_times,
+    tide_nudges,
+)
 from gogo.clock import LISBON, from_local_input, to_local
 from gogo.models import Fault, Observation, Spot, WindowScore
 from gogo.schemas import (
+    DaylightOut,
     DaysOut,
     HourOut,
     ObservationIn,
     ObservationOut,
     ShownOut,
+    SpotAlmanacOut,
     SpotDayOut,
     SpotDetailOut,
     SpotOut,
     SwellOut,
+    TideNudgeOut,
+    TideOut,
     WindowOut,
     WindowsOut,
 )
@@ -82,6 +95,63 @@ def _window_out(
     )
 
 
+def _daylight_out(sun: SunTimes) -> DaylightOut:
+    return DaylightOut(
+        civil_dawn=sun.civil_dawn,
+        civil_dawn_local=to_local(sun.civil_dawn),
+        sunrise_local=to_local(sun.sunrise),
+        sunset_local=to_local(sun.sunset),
+        civil_dusk=sun.civil_dusk,
+        civil_dusk_local=to_local(sun.civil_dusk),
+    )
+
+
+def _tide_out(p: TurningPoint) -> TideOut:
+    return TideOut(
+        at=p.at, at_local=to_local(p.at), kind=p.kind, height_m=p.height_cd_m, king=p.king
+    )
+
+
+def _coast_daylight(spots: list[Spot], day: date) -> DaylightOut | None:
+    """The widest light along the coast, so every spot's window fits the strip."""
+    if not spots:
+        return None
+    suns = [sun_times(day, s.lat, s.lon) for s in spots]
+    return _daylight_out(
+        SunTimes(
+            civil_dawn=min(x.civil_dawn for x in suns),
+            sunrise=min(x.sunrise for x in suns),
+            sunset=max(x.sunset for x in suns),
+            civil_dusk=max(x.civil_dusk for x in suns),
+        )
+    )
+
+
+def _nudges_out(spots: list[Spot], day: date) -> list[TideNudgeOut]:
+    names = {s.id: s for s in spots}
+    return [
+        TideNudgeOut(
+            kind=n.kind,
+            tides=[_tide_out(p) for _, p in n.points],
+            stations=[st.name for st, _ in n.points],
+            spots=[
+                SpotOut(id=i, name=names[i].name, region=names[i].region) for i in n.spot_ids
+            ],
+        )
+        for n in tide_nudges(spots, day)
+    ]
+
+
+def _spot_almanac(spot: Spot, day: date) -> SpotAlmanacOut:
+    station = station_for(spot.lat, spot.lon)
+    return SpotAlmanacOut(
+        station=station.name,
+        daylight=_daylight_out(sun_times(day, spot.lat, spot.lon)),
+        tides=[_tide_out(p) for p in day_tides(station, day)],
+        tide_class=day_class(station, day),
+    )
+
+
 def _windows_out(served: Served) -> WindowsOut:
     versions = {spot.id: spec_version(spot) for spot in served.spots}
     regions = {spot.id: spot.region for spot in served.spots}
@@ -92,6 +162,8 @@ def _windows_out(served: Served) -> WindowsOut:
         score_version=SCORE_VERSION,
         as_of=served.as_of,
         windows=[_window_out(w, versions, regions) for w in served.windows],
+        daylight=_coast_daylight(served.spots, served.day),
+        nudges=_nudges_out(served.spots, served.day),
     )
 
 
@@ -164,6 +236,7 @@ def spot_day(spot_id: str, day: date | None = None) -> SpotDayOut:
             )
             for f, h in serve_spot(spot, served.day)
         ],
+        almanac=_spot_almanac(spot, served.day),
     )
 
 

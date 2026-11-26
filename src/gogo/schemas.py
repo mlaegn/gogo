@@ -14,11 +14,14 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
+from typing import Literal
+
 from gogo.models import (
     CrowdReport,
     FaultCode,
     ObservationKind,
     Region,
+    TideClass,
     TidePhase,
     Verdict,
 )
@@ -51,6 +54,52 @@ class WindowOut(BaseModel):
     reasons: list[ReasonOut]
 
 
+class DaylightOut(BaseModel):
+    """A day's light. Civil dawn and dusk (sun 6° below the horizon) bound the hours a
+    window is searched in (score v5); sunrise and sunset are for reading."""
+
+    civil_dawn: datetime
+    civil_dawn_local: datetime
+    sunrise_local: datetime
+    sunset_local: datetime
+    civil_dusk: datetime
+    civil_dusk_local: datetime
+
+
+class TideOut(BaseModel):
+    """One high or low water from the official tide table."""
+
+    at: datetime
+    at_local: datetime
+    kind: Literal["high", "low"]
+    #: Above chart datum, as the tide tables print it: the number a surfer compares.
+    height_m: float
+    king: bool
+
+
+class TideNudgeOut(BaseModel):
+    """A king tide in daylight, and the spots whose tide gate it tests hardest. The
+    page asks for a checked session at several of them, because the headline metric
+    is built from same-day pairs."""
+
+    kind: Literal["high", "low"]
+    #: One per station (Cascais, Peniche), earliest first.
+    tides: list[TideOut]
+    stations: list[str]
+    spots: list[SpotOut]
+
+
+class SpotAlmanacOut(BaseModel):
+    """What is known in advance at one spot on one day: its station's tide table and
+    the spot's own daylight."""
+
+    station: str
+    daylight: DaylightOut
+    tides: list[TideOut]
+    #: The biggest tide of the day. None outside the committed table.
+    tide_class: TideClass | None = None
+
+
 class WindowsOut(BaseModel):
     day: date
     days: list[date]
@@ -58,6 +107,9 @@ class WindowsOut(BaseModel):
     score_version: str
     as_of: datetime | None = None
     windows: list[WindowOut]
+    #: Earliest dawn and latest dusk along the coast: the span the day strip draws.
+    daylight: DaylightOut | None = None
+    nudges: list[TideNudgeOut] = []
 
 
 class DaysOut(BaseModel):
@@ -117,6 +169,7 @@ class SpotDayOut(BaseModel):
     spot: SpotDetailOut
     day: date
     hours: list[HourOut]
+    almanac: SpotAlmanacOut | None = None
 
 
 class ObservationIn(BaseModel):
