@@ -66,3 +66,11 @@ def test_the_bundle_is_built_not_committed():
     """
     assert BUNDLE_DIR.is_relative_to(PACKAGE)
     assert BUNDLE_DIR.parent == STATIC_DIR
+
+
+def test_the_tide_tables_live_inside_the_package():
+    """The almanac reads them at runtime, like the ray tables."""
+    from gogo import almanac
+
+    assert almanac.DATA_DIR.is_relative_to(PACKAGE)
+    assert set(almanac.stations()) == {"cascais", "peniche"}
