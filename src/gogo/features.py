@@ -35,7 +35,7 @@ from datetime import date, datetime, timedelta
 
 import psycopg
 
-from gogo.assemble import SURFABLE_FROM_HOUR
+from gogo.assemble import first_light_on_coast
 from gogo.clock import from_local_input
 from gogo.ingest.protocol import GridHour
 from gogo.models import Spot
@@ -72,8 +72,9 @@ def as_of_for(policy: str, day: date) -> datetime | None:
     if policy == EVENING_BEFORE:
         return from_local_input(day - timedelta(days=1), f"{EVENING_HOUR:02d}:00")
     if policy == LEAD_24H:
-        first_hour = from_local_input(day, f"{SURFABLE_FROM_HOUR:02d}:00")
-        return first_hour - timedelta(hours=24)
+        # 24 h before the first hour anyone on the coast could be surfing. Until v5
+        # that was a fixed 06:00 local.
+        return first_light_on_coast(day) - timedelta(hours=24)
     raise ValueError(f"unknown as-of policy {policy!r}; expected one of {POLICIES}")
 
 
@@ -136,8 +137,8 @@ def features_for_day(
 ) -> Features:
     """Every hour of one local day for these spots, as known at the policy's as-of.
 
-    Padded by `TIDE_CONTEXT` either side, under the same as-of bound, so a 06:00 or a
-    20:00 gets the same tide phase here as it did when served. Without the padding an
+    Padded by `TIDE_CONTEXT` either side, under the same as-of bound, so the first or
+    last light hour gets the same tide phase here as it did when served. Without the padding an
     edge hour is classified against a different slice of the cycle than serving used.
 
     Returns the same `GridHour` shape that `load_current_hours` serves, tagged with each

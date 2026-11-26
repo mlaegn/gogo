@@ -180,7 +180,8 @@ def test_movement_counts_nothing_when_nothing_changes():
     assert m.days == 1
     assert m.headline_changed == 0
     assert sum(m.opened.values()) == sum(m.closed.values()) == 0
-    assert m.hours["ribeira"] == 14, "06:00–20:00 local, every surfable hour counted"
+    # Stored 06:00–20:00 local; since v5 civil dawn (06:44 on 5 September) drops 06:00.
+    assert m.hours["ribeira"] == 13, "07:00–20:00 local, every surfable hour counted"
 
 
 def test_re_anchored_movement_is_nothing_on_a_typical_day():
