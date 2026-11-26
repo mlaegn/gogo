@@ -36,7 +36,7 @@ number.
 | **Spots** | 16 spots in `src/gogo/data/coast.yml`: swell window, size range, wind, tide |
 | **Score** | Deterministic, per hour; adjacent passing hours become a window, ranked by mean then length, searched between civil dawn and dusk (`v5`) |
 | **Worker** | Fetches Open-Meteo marine + wind hourly into Postgres; keeps every changed forecast |
-| **Page** | Phone UI (React + TS): ranked windows for any day this week, plus the blind log card |
+| **Page** | Phone UI (React + TS): ranked windows for any day this week, each spot's tide table and light, a nudge to log on king-tide days, plus the blind log card |
 | **Labels** | `observations` from the page, `gogo log`, or a CSV of remembered sessions |
 | **Harness** | `gogo backtest`: labels × what was knowable at the time → ranking accuracy vs baselines |
 
