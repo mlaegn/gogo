@@ -56,6 +56,17 @@ def test_a_name_parses_to_options_and_a_canonical_name():
     )
 
 
+def test_the_tide_candidates_parse():
+    assert cand.parse("tide:official") == ("tide:official", ScoreOptions(tide_official=True))
+    assert cand.parse("tide_height:0.350") == ("tide_height:0.35", ScoreOptions(tide_band_m=0.35))
+    with pytest.raises(ValueError, match="official"):
+        cand.parse("tide:height")
+    with pytest.raises(ValueError, match="0.1–1.0"):
+        cand.parse("tide_height:2")
+    with pytest.raises(ValueError, match="replaces the phase gate"):
+        cand.parse("tide:official+tide_height:0.35")
+
+
 def test_the_whole_physics_candidate_parses():
     name, options = cand.parse("dir_taper:45+shadow:20+size_period:typical")
     assert name == "dir_taper:45+shadow:20+size_period:typical"

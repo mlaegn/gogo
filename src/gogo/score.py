@@ -5,7 +5,15 @@ import math
 from dataclasses import dataclass
 
 from gogo.geo import angle_delta, angle_distance, in_bearing_window, window_center
-from gogo.models import HourForecast, HourScore, Reason, Spot, Verdict
+from gogo.models import (
+    HourForecast,
+    HourScore,
+    Reason,
+    Spot,
+    TidePhase,
+    TideTrend,
+    Verdict,
+)
 from gogo.rays import factor, load_tables
 
 # Bump on any change that can move a rank: weights, thresholds, gates, new terms, or the
@@ -161,6 +169,32 @@ class ScoreOptions:
     #: plus the median gap and "peak_shifted" the mean, so neither jumps on day three.
     period_gate: str = "mean"
 
+    #: The tide gate on the official curve (S12, first half). The incumbent reads low /
+    #: mid / high off Open-Meteo's sea level, shifted 32 minutes (v4). This reads it off
+    #: the Instituto Hidrográfico's table instead (`gogo.almanac`): the same thirds of
+    #: the same half-cycle, from the tide the tables print. The two agree to 8–9 cm, and
+    #: over the same year it moved the headline on 2 days of 365 (412 spot-hours opened,
+    #: 129 shut): the control for `tide_band_m`, which needs the official curve for its
+    #: heights. Hours past the end of the table keep the incumbent's phase.
+    tide_official: bool = False
+
+    #: The tide gate on height, not phase (S12). A phase is a fraction of the cycle the
+    #: hour sits in, so a king low and a neap low are both "low", 1.7 m and 0.6 m below
+    #: mean sea level. What a reef or a bank answers to is the depth. With this set, a
+    #: spot that leaves out low tide wants the official level above minus this many
+    #: metres, and one that leaves out high wants it below plus this many; a spot that
+    #: takes all three has no tide gate, as now.
+    #:
+    #: The band is drawn from each spot's existing `tides`, not written per spot, so it
+    #: says nothing new about any one spot. On a median tide (−1.0 to +1.0 m at both
+    #: stations) the phase thirds fall at ±0.35 m, so `tide_band_m=0.35` reads like the
+    #: incumbent on an ordinary day and differs where the size of the tide does. Over a
+    #: year of reanalysis at the nine tide-gated spots (1 Sep 2025 – 31 Aug 2026) it
+    #: opened 1277 of 11144 neap hours and shut 5; shut 259 of 9077 spring hours and
+    #: opened 13; shut 66 of 1911 king hours and opened none. The headline moved on 8
+    #: days of 365. Hours past the end of the table keep the incumbent's phase gate.
+    tide_band_m: float | None = None
+
     def __post_init__(self) -> None:
         if self.size_ref_period_s is not None and self.size_period_typical:
             raise ValueError("size_ref_period_s and size_period_typical are exclusive")
@@ -170,6 +204,12 @@ class ScoreOptions:
             raise ValueError("rays_keep_window needs rays")
         if self.period_gate not in ("mean", "peak", "peak_shifted"):
             raise ValueError(f"period_gate is mean, peak or peak_shifted, not {self.period_gate!r}")
+        if self.tide_official and self.tide_band_m is not None:
+            raise ValueError(
+                "tide_band_m replaces the phase gate; tide_official has nothing to read"
+            )
+        if self.tide_band_m is not None and self.tide_band_m <= 0:
+            raise ValueError(f"tide_band_m must be positive, not {self.tide_band_m}")
 
 
 INCUMBENT = ScoreOptions()
@@ -414,21 +454,7 @@ def score_hour(
     if reasons[-1].points == 0:
         vetoed = True
 
-    if hour.tide is None:
-        reasons.append(Reason(code="tide", detail="tide unknown", points=8))
-    elif hour.tide not in spot.tides:
-        reasons.append(
-            Reason(
-                code="tide",
-                detail=f"{hour.tide} tide is outside {', '.join(spot.tides)}",
-                points=2,
-            )
-        )
-    else:
-        extra = " incoming" if hour.tide_trend == "incoming" else ""
-        reasons.append(
-            Reason(code="tide", detail=f"{hour.tide}{extra} works here", points=15)
-        )
+    reasons.append(_tide(spot, hour, options))
 
     total = 0 if vetoed else min(100, sum(r.points for r in reasons))
     return HourScore(
@@ -440,6 +466,52 @@ def score_hour(
         reasons=reasons,
         vetoed=vetoed,
     )
+
+
+#: The thresholds `tide.attach_tide` uses, so the official phase is the same reading.
+_LOW_BELOW, _HIGH_FROM = 0.33, 0.67
+#: `attach_tide` calls a change under 5 cm across the two hours around one slack.
+_SLACK_M_H = 0.025
+
+
+def _official_phase(hour: HourForecast) -> tuple[TidePhase, TideTrend] | None:
+    if hour.tide_fraction is None or hour.tide_rate_m_h is None:
+        return None
+    f = hour.tide_fraction
+    phase: TidePhase = "low" if f < _LOW_BELOW else "mid" if f < _HIGH_FROM else "high"
+    rate = hour.tide_rate_m_h
+    trend: TideTrend = (
+        "slack" if abs(rate) < _SLACK_M_H else "incoming" if rate > 0 else "outgoing"
+    )
+    return phase, trend
+
+
+def _tide(spot: Spot, hour: HourForecast, options: ScoreOptions) -> Reason:
+    """15 when the tide suits the spot, 2 when it does not, 8 when nobody knows."""
+    phase, trend = hour.tide, hour.tide_trend
+    if options.tide_band_m is not None and hour.tide_height_m is not None:
+        band, z = options.tide_band_m, hour.tide_height_m
+        if "low" not in spot.tides and z < -band:
+            return Reason(
+                code="tide", detail=f"{z:+.1f} m tide is below {-band:+.2f} m", points=2
+            )
+        if "high" not in spot.tides and z > band:
+            return Reason(
+                code="tide", detail=f"{z:+.1f} m tide is above {band:+.2f} m", points=2
+            )
+        extra = " incoming" if (hour.tide_rate_m_h or 0) >= _SLACK_M_H else ""
+        return Reason(code="tide", detail=f"{z:+.1f} m{extra} works here", points=15)
+    if options.tide_official and (official := _official_phase(hour)) is not None:
+        phase, trend = official
+
+    if phase is None:
+        return Reason(code="tide", detail="tide unknown", points=8)
+    if phase not in spot.tides:
+        return Reason(
+            code="tide", detail=f"{phase} tide is outside {', '.join(spot.tides)}", points=2
+        )
+    extra = " incoming" if trend == "incoming" else ""
+    return Reason(code="tide", detail=f"{phase}{extra} works here", points=15)
 
 
 def _shown(value: float, digits: int, side: str) -> str:
