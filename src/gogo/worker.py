@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 
 import httpx
 
+from gogo.almanac import covered_until
 from gogo.clock import now_utc, to_local
 from gogo.ingest.archive import ArchiveSource
 from gogo.ingest.openmeteo import SOURCE as FORECAST_SOURCE
@@ -85,6 +86,12 @@ def spots_without_hours() -> list[str]:
 #: minute at Open-Meteo has become a worker that is not running.
 MAX_AGE_S = 7200
 
+#: How close to its end the committed tide table may get. Past the end every hour
+#: quietly loses its official tide and everything still renders, which is exactly the
+#: failure `Health` exists for. Sixty days is time to rerun `scripts/tide_table.py`
+#: once the Instituto Hidrográfico publishes the next year.
+TIDE_TABLE_MIN_DAYS = 60
+
 
 @dataclass(frozen=True)
 class Health:
@@ -94,6 +101,9 @@ class Health:
     no empty page. The first shows up only as a timestamp that stopped moving, and the
     second only as one fewer row in a list nobody counts. Neither is visible from the
     outside unless something asks, so this is the thing that asks.
+
+    The tide table is the third: past its last day every hour loses its official tide
+    and nothing errors, so it is counted here too, two months before it happens.
     """
 
     as_of: datetime | None
@@ -104,6 +114,20 @@ class Health:
     #: answers "has it been". They come apart after an outage the worker recovered
     #: from on its own, which is exactly the hole you would otherwise never see.
     cycles_24h: int = 0
+    #: The last instant the committed tide table covers (`gogo.almanac`).
+    tide_until: datetime | None = None
+    checked_at: datetime | None = None
+
+    @property
+    def tide_days_left(self) -> float | None:
+        if self.tide_until is None or self.checked_at is None:
+            return None
+        return (self.tide_until - self.checked_at).total_seconds() / 86400
+
+    @property
+    def tide_running_out(self) -> bool:
+        left = self.tide_days_left
+        return left is not None and left < TIDE_TABLE_MIN_DAYS
 
     @property
     def stale(self) -> bool:
@@ -111,7 +135,7 @@ class Health:
 
     @property
     def ok(self) -> bool:
-        return not self.stale and not self.missing
+        return not self.stale and not self.missing and not self.tide_running_out
 
     def lines(self, spot_count: int) -> list[str]:
         if self.as_of is None or self.age_s is None:
@@ -131,7 +155,15 @@ class Health:
         # 24 of 24 is a full day. Fewer is a hole the worker has already recovered
         # from, which freshness alone would never show you.
         cycles = f"cycles: {self.cycles_24h} in the last 24 h"
-        return [freshness, coverage, cycles]
+        lines = [freshness, coverage, cycles]
+        if self.tide_until is not None and self.tide_days_left is not None:
+            lines.append(
+                f"tide table: {'RUNNING OUT' if self.tide_running_out else 'ok'}, "
+                f"to {to_local(self.tide_until):%Y-%m-%d} "
+                f"({self.tide_days_left:.0f} days; rerun scripts/tide_table.py "
+                f"under {TIDE_TABLE_MIN_DAYS})"
+            )
+        return lines
 
 
 HEARTBEAT_ENV = "GOGO_HEARTBEAT_URL"
@@ -173,13 +205,16 @@ def health(max_age_s: int = MAX_AGE_S) -> Health:
         as_of = current_as_of(conn)
         hours = load_current_hours(conn, spots)
         recent = cycles_since(conn, now_utc() - timedelta(hours=24))
-    age = (now_utc() - as_of).total_seconds() if as_of else None
+    now = now_utc()
+    age = (now - as_of).total_seconds() if as_of else None
     return Health(
         as_of=as_of,
         age_s=age,
         max_age_s=max_age_s,
         missing=_missing(spots, hours),
         cycles_24h=recent,
+        tide_until=covered_until(),
+        checked_at=now,
     )
 
 

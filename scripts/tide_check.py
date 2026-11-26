@@ -63,7 +63,9 @@ def official(port: int, start: date, end: date) -> list[tuple[datetime, str, flo
             at = datetime.fromisoformat(row["date"]).replace(tzinfo=UTC)
             if start <= at.date() <= end:
                 events[at] = ("high" if row["tide"] == "PM" else "low", float(row["height"]))
-        day += timedelta(days=8)  # period 7 covers the day and seven more
+        # period 7 covers seven days. This stepped eight until 2026-11-26 and lost a day a
+        # week, so the first run in the docstring matched about 7 in 8 turning points.
+        day += timedelta(days=7)
     return [(t, kind, h) for t, (kind, h) in sorted(events.items())]
 
 

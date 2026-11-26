@@ -8,6 +8,8 @@ from gogo.clock import UtcDatetime
 
 TidePhase = Literal["low", "mid", "high"]
 TideTrend = Literal["incoming", "outgoing", "slack"]
+#: The official tide's half-cycle against its year: see `gogo.almanac`.
+TideClass = Literal["neap", "normal", "spring", "king"]
 Skill = Literal["beginner", "intermediate", "advanced", "expert"]
 Crowd = Literal["low", "medium", "high"]
 Verdict = Literal["no", "maybe", "go"]
@@ -100,6 +102,14 @@ class HourForecast(BaseModel):
     sea_level_m: float | None = None
     tide: TidePhase | None = None
     tide_trend: TideTrend | None = None
+
+    # The official tide from `gogo.almanac`: carried, not scored. None outside the
+    # committed table. Heights are above mean sea level, which Open-Meteo's
+    # `sea_level_m` is not quite: it reads 38 cm low (`scripts/almanac_check.py`).
+    tide_height_m: float | None = None
+    tide_rate_m_h: float | None = None
+    tide_range_m: float | None = None
+    tide_class: TideClass | None = None
 
     # Stored and carried, not scored. See GridHour for what each one is for.
     swell_peak_period_s: float | None = None
