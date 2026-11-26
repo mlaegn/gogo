@@ -274,3 +274,15 @@ def test_no_nudge_on_an_ordinary_day():
     from gogo.almanac import tide_nudges
 
     assert tide_nudges(load_spots(), date(2026, 11, 27)) == []
+
+
+def test_the_fraction_runs_from_low_water_to_high_water():
+    st = stations()["cascais"]
+    low = next(p for p in st.points[200:] if p.kind == "low")
+    i = st.points.index(low)
+    high = st.points[i + 1]
+    assert st.at(low.at).fraction == pytest.approx(0.0, abs=0.001)
+    mid = low.at + (high.at - low.at) / 2
+    assert st.at(mid).fraction == pytest.approx(0.5, abs=0.001)
+    after_high = st.at(high.at + timedelta(minutes=1))
+    assert after_high.fraction == pytest.approx(1.0, abs=0.01)

@@ -110,6 +110,8 @@ class HourForecast(BaseModel):
     tide_rate_m_h: float | None = None
     tide_range_m: float | None = None
     tide_class: TideClass | None = None
+    #: 0 at the half-cycle's low water, 1 at its high: the official phase.
+    tide_fraction: float | None = None
 
     # Stored and carried, not scored. See GridHour for what each one is for.
     swell_peak_period_s: float | None = None
