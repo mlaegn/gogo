@@ -206,7 +206,7 @@ def test_movement_sees_a_candidate_close_a_spot():
         moved = cand.movement(conn, spots, cand.options_for(["size_period:8.3"]))
 
     m = moved["size_period:8.3"]
-    assert m.closed["ribeira"] == 14 and m.opened["ribeira"] == 0
+    assert m.closed["ribeira"] == 13 and m.opened["ribeira"] == 0  # 07:00–20:00, v5
     assert m.headline_changed == 1
     assert m.disagreements == [(DAY, "ribeira", None)]
     assert m.incumbent_verdicts["no"] == 0 and m.candidate_verdicts["no"] == 1
@@ -221,7 +221,7 @@ def test_movement_sees_the_taper_open_a_spot_just_outside_its_window():
         _hours(conn, spots, swell_from_deg=340.0)
         moved = cand.movement(conn, spots, cand.options_for(["dir_taper:45"]))
     m = moved["dir_taper:45"]
-    assert m.opened["sao_sebastiao"] == 14 and m.closed["sao_sebastiao"] == 0
+    assert m.opened["sao_sebastiao"] == 13 and m.closed["sao_sebastiao"] == 0  # v5
     assert m.disagreements == [(DAY, None, "sao_sebastiao")]
 
 
